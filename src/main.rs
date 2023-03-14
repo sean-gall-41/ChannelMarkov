@@ -6,14 +6,8 @@ use rand::{
     Rng,
 };
 
-const DEFAULT_NUM_CHANNELS: u32 = 1;
-const DEFAULT_NUM_TS: u32 = 1000; // ms
-const DEFAULT_STIM_MV: f32 = 10.0;
-const DEFAULT_CLOSE_RATE: f32 = 0.01;
-const DEFAULT_OPEN_RATE: f32 = 0.01;
-
-/* think about it from matrix mult lens: the col index is the state we come
- * from, and the row index is the state we go to
+/*
+ * Here's the basic state diagram that we're assuming our Markov Model follows:
  *
  *  close            close            close            close            open
  * +-----+          +-----+          +-----+          +-----+          +-----+
@@ -23,7 +17,17 @@ const DEFAULT_OPEN_RATE: f32 = 0.01;
  * +-----+          +-----+          +-----+          +-----+          +-----+
  *
  * where here a == OPEN_RATE and b == CLOSE_RATE
+ *
+ * one thing to change, after checking with real data, is which transitions are allowed:
+ * this linear transition diagram is a simplication, and there may be other diagrams
+ * that better fit the data
  */
+
+const DEFAULT_NUM_CHANNELS: u32 = 1;
+const DEFAULT_NUM_TS: u32 = 1000; // ms
+const DEFAULT_STIM_MV: f32 = 10.0;
+const DEFAULT_CLOSE_RATE: f32 = 0.01;
+const DEFAULT_OPEN_RATE: f32 = 0.01;
 
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
