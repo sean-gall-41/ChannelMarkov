@@ -8,6 +8,7 @@ use rand::{
 
 const DEFAULT_NUM_CHANNELS: u32 = 1;
 const DEFAULT_NUM_TS: u32 = 1000; // ms
+const DEFAULT_STIM_MV: f32 = 10.0;
 const DEFAULT_CLOSE_RATE: f32 = 0.01;
 const DEFAULT_OPEN_RATE: f32 = 0.01;
 
@@ -86,6 +87,12 @@ impl Channel {
         }
     }
 
+    fn update_rates(&mut self, stim: &Vec<f32>, ts: u32) {
+        // for now: hard-coding in values for delayed K+ rectifier conductance
+        self.open_rate = 1.22 * (0.04 * stim[ts as usize]).exp();
+        self.close_rate = 0.056 * (-0.0125 * stim[ts as usize]).exp();
+    }
+
     fn make_transition(&mut self) {
         let choice = rand::thread_rng().gen_range(0..2);
         match self.state {
@@ -157,6 +164,7 @@ pub struct Simulation {
     pub num_channels: u32,
     pub num_ts: u32,
     pub channels: Vec<Channel>,
+    pub stimulus: Vec<f32>,
 }
 
 impl Simulation {
@@ -165,22 +173,27 @@ impl Simulation {
             num_channels: DEFAULT_NUM_CHANNELS,
             num_ts: DEFAULT_NUM_TS,
             channels: vec![Channel::new(true); DEFAULT_NUM_CHANNELS as usize],
+            stimulus: vec![DEFAULT_STIM_MV; DEFAULT_NUM_TS as usize],
         }
     }
 
-    fn from(num_channels: u32, num_ts: u32) -> Self {
-        let open_rate: f32 = 0.835;
-        let close_rate: f32 = 0.033;
+    fn from(num_channels: u32,
+            num_ts: u32,
+            init_open_rate: f32,
+            init_close_rate: f32,
+            stimulus: Vec<f32>) -> Self {
         Simulation {
             num_channels: num_channels,
             num_ts: num_ts,
-            channels: vec![Channel::from_rates(open_rate, close_rate); num_channels as usize],
+            channels: vec![Channel::from_rates(init_open_rate, init_close_rate); num_channels as usize],
+            stimulus: stimulus,
         }
     }
 
     fn run(&mut self) {
         for ts in 0..self.num_ts {
             for channel in &mut self.channels {
+                channel.update_rates(&self.stimulus, ts);
                 channel.make_transition();
                 if channel.state == ChannelState::Open {
                     println!("ts: {ts}, Open");
@@ -190,8 +203,23 @@ impl Simulation {
     }
 }
 
+/*
+ * Couple of fixes:
+ *
+ * a. need to scale the transition rates so lie in range [0, 1)
+ * b. need to initialize rates to *correct* values wrt input current at t == 0
+ * c. need to create function to generate stimulus
+ * d. even later: put all relevant params in json and read from
+ */
 fn main() -> Result<(), Error> {
-    let mut model_sim = Simulation::from(1, 1_000);
+    // initial values for delayed K+ rectifier conductance
+    let init_open_rate: f32 = 1.22;
+    let init_close_rate: f32 = 0.056;
+    let mut model_sim = Simulation::from(1,
+                                         50,
+                                         init_open_rate,
+                                         init_close_rate,
+                                         vec![DEFAULT_STIM_MV; 50]);
     //let mut model_sim = Simulation::new();
     model_sim.run();
     Ok(())
