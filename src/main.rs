@@ -68,6 +68,28 @@ impl Channel {
     }
 }
 
+/* Takes in a vector of tuples that describe a step-wise voltage stimulus
+ * e.g., suppose you have this vector:
+ * vec![(20, -100), (20, 10), (20, -100)]
+ * this says:
+ *
+ * set the stimulus to -100mV in interval [0, 20),
+ * set the stimulus to 10mV in interval [20, 40),
+ * set the stimulus to -100mV in interval [40, 60)
+ *
+ * for safety, asserts that the sum of the p.0s == num_ts
+ */
+fn generate_stimulus(stim_intervals: &Vec<(u32, f32)>, num_ts: u32) -> Vec<f32> {
+    assert_eq!(num_ts, stim_intervals.iter().map(|&p| p.0).sum());
+    let mut stim: Vec<f32> = vec![];
+    for (t, v) in stim_intervals.iter() {
+        for _ in 0..(*t) {
+            stim.push(*v);
+        }
+    }
+    stim
+}
+
 pub struct Simulation {
     pub num_channels: u32,
     pub num_ts: u32,
@@ -83,14 +105,14 @@ impl Simulation {
             num_ts: u32,
             init_open_rate: f32,
             init_close_rate: f32,
-            stimulus: Vec<f32>) -> Self {
+            stim_intervals: &Vec<(u32, f32)>) -> Self {
         Simulation {
             num_channels: num_channels,
             num_ts: num_ts,
             open_rate: init_open_rate,
             close_rate: init_close_rate,
             channels: vec![Channel::new(); num_channels as usize],
-            stimulus: stimulus,
+            stimulus: generate_stimulus(stim_intervals, num_ts),
             transition_matrix: [
     [            0.0,  4.0 * init_open_rate,                   0.0,                   0.0,            0.0],
     [init_close_rate,                   0.0,  3.0 * init_open_rate,                   0.0,            0.0],
@@ -124,9 +146,9 @@ impl Simulation {
             self.update_transition_matrix();
             for channel in &mut self.channels {
                 channel.make_transition(&self.transition_matrix);
-                if channel.state == ChannelState::Open {
-                    println!("ts: {ts}, state: {:?}", channel.state);
-                }
+                println!("ts: {ts}, state: {:?}", channel.state);
+                //if channel.state == ChannelState::Open {
+                //}
             }
         }
     }
@@ -134,18 +156,17 @@ impl Simulation {
 
 /*
  * Couple of fixes:
- *
- * b. need to initialize rates to *correct* values wrt input current at t == 0
  * c. need to create function to generate stimulus
  * d. even later: put all relevant params in json and read from
  */
 fn main() -> Result<(), Error> {
     // initial values for delayed K+ rectifier conductance
+    let stimulus: Vec<(u32, f32)> = vec![(15, -100.0), (20, 10.0), (15, -100.0)];
     let mut model_sim = Simulation::from(1,
                                          50,
                                          DEFAULT_OPEN_RATE,
                                          DEFAULT_CLOSE_RATE,
-                                         vec![DEFAULT_STIM_MV; 50]);
+                                         &stimulus);
     model_sim.run();
 
     Ok(())
