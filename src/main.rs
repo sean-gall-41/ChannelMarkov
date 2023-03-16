@@ -2,9 +2,15 @@ extern crate rand;
 
 use std::io::Error;
 use rand::{
-    distributions::{Distribution, Standard},
+    distributions::{Distribution, Standard, WeightedIndex},
     Rng,
 };
+
+const DEFAULT_NUM_CHANNELS: u32 = 1;
+const DEFAULT_NUM_TS: u32       = 1000; // ms
+const DEFAULT_STIM_MV: f32      = 10.0;
+const DEFAULT_CLOSE_RATE: f32   = 0.01;
+const DEFAULT_OPEN_RATE: f32    = 0.01;
 
 /*
  * Here's the basic state diagram that we're assuming our Markov Model follows:
@@ -23,16 +29,18 @@ use rand::{
  * that better fit the data
  */
 
-const DEFAULT_NUM_CHANNELS: u32 = 1;
-const DEFAULT_NUM_TS: u32 = 1000; // ms
-const DEFAULT_STIM_MV: f32 = 10.0;
-const DEFAULT_CLOSE_RATE: f32 = 0.01;
-const DEFAULT_OPEN_RATE: f32 = 0.01;
+const TRANSITION_MATRIX: [[f32; 5]; 5] = [
+    [               0.0,  4.0 * DEFAULT_OPEN_RATE,                      0.0,                      0.0,               0.0],
+    [DEFAULT_CLOSE_RATE,                      0.0,  3.0 * DEFAULT_OPEN_RATE,                      0.0,               0.0],
+    [               0.0, 2.0 * DEFAULT_CLOSE_RATE,                      0.0,  2.0 * DEFAULT_OPEN_RATE,               0.0],
+    [               0.0,                      0.0, 3.0 * DEFAULT_CLOSE_RATE,                      0.0, DEFAULT_OPEN_RATE],
+    [               0.0,                      0.0,                      0.0, 4.0 * DEFAULT_CLOSE_RATE,               0.0],
+];
 
-
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, PartialOrd, Copy, Clone)]
+#[repr(i32)]
 pub enum ChannelState {
-    Closed1,
+    Closed1 = 0,
     Closed2,
     Closed3,
     Closed4,
@@ -41,13 +49,7 @@ pub enum ChannelState {
 
 impl Distribution<ChannelState> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> ChannelState {
-        match rng.gen_range(0..=4) {
-            0 => ChannelState::Closed1,
-            1 => ChannelState::Closed2,
-            2 => ChannelState::Closed3,
-            3 => ChannelState::Closed4,
-            _ => ChannelState::Open,
-        }
+        unsafe { ::std::mem::transmute(rng.gen_range(0..=4)) }
     }
 }
 
@@ -75,14 +77,6 @@ impl Channel {
         }
     }
 
-    //fn from_state(in_state: ChannelState) -> Self {
-    //    Channel {
-    //        state: in_state,
-    //        open_rate: DEFAULT_OPEN_RATE,
-    //        close_rate: DEFAULT_CLOSE_RATE,
-    //    }
-    //}
-
     fn from_rates(open_rate: f32, close_rate: f32) -> Self {
         Channel {
             state: rand::random(),
@@ -98,69 +92,13 @@ impl Channel {
     }
 
     fn make_transition(&mut self) {
-        let choice = rand::thread_rng().gen_range(0..2);
-        match self.state {
-            ChannelState::Closed1 => {
-                if rand::thread_rng().gen::<f32>() < 4.0 * DEFAULT_OPEN_RATE {
-                    self.state = ChannelState::Closed2;
-                    return;
-                }
-            },
-            ChannelState::Closed2 => {
-                match choice {
-                    0 => {
-                        if rand::thread_rng().gen::<f32>() < DEFAULT_CLOSE_RATE {
-                            self.state = ChannelState::Closed1;
-                        }
-                    },
-                    1 => {
-                        if rand::thread_rng().gen::<f32>() < 3.0 * DEFAULT_OPEN_RATE {
-                            self.state = ChannelState::Closed3;
-                        }
-                    },
-                    _ => (),
-                }
-                return;
-            },
-            ChannelState::Closed3 => {
-                match choice {
-                    0 => {
-                        if rand::thread_rng().gen::<f32>() < 2.0 * DEFAULT_CLOSE_RATE {
-                            self.state = ChannelState::Closed2;
-                        }
-                    },
-                    1 => {
-                        if rand::thread_rng().gen::<f32>() < 2.0 * DEFAULT_OPEN_RATE {
-                            self.state = ChannelState::Closed4;
-                        }
-                    },
-                    _ => (),
-                }
-                return;
-            },
-            ChannelState::Closed4 => {
-                match choice {
-                    0 => {
-                        if rand::thread_rng().gen::<f32>() < 3.0 * DEFAULT_CLOSE_RATE {
-                            self.state = ChannelState::Closed3;
-                        }
-                    },
-                    1 => {
-                        if rand::thread_rng().gen::<f32>() < DEFAULT_OPEN_RATE {
-                            self.state = ChannelState::Open;
-                        }
-                    },
-                    _ => (),
-                }
-                return;
-            },
-            ChannelState::Open => {
-                if rand::thread_rng().gen::<f32>() < 4.0 * DEFAULT_CLOSE_RATE {
-                    self.state = ChannelState::Closed4;
-                    return;
-                }
-            },
-        }
+        let transition_row = TRANSITION_MATRIX[self.state as usize];
+        let dist = WeightedIndex::new(&transition_row).unwrap();
+        let transition_prob = transition_row[dist.sample(&mut rand::thread_rng())];
+        self.state = unsafe { ::std::mem::transmute(transition_row.iter()
+                                                                  .position(|&r| r == transition_prob)
+                                                                  .unwrap() as i32)
+        };
     }
 }
 
@@ -197,10 +135,9 @@ impl Simulation {
     fn run(&mut self) {
         for ts in 0..self.num_ts {
             for channel in &mut self.channels {
-                channel.update_rates(&self.stimulus, ts);
+                //channel.update_rates(&self.stimulus, ts);
                 channel.make_transition();
                 if channel.state == ChannelState::Open {
-                    println!("ts: {ts}, Open");
                 }
             }
         }
@@ -224,8 +161,8 @@ fn main() -> Result<(), Error> {
                                          init_open_rate,
                                          init_close_rate,
                                          vec![DEFAULT_STIM_MV; 50]);
-    //let mut model_sim = Simulation::new();
     model_sim.run();
+
     Ok(())
 }
 
