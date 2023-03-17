@@ -1,10 +1,13 @@
 extern crate rand;
 
+use std::fs;
 use std::io::Error;
 use rand::{
     distributions::{Distribution, Standard, WeightedIndex},
     Rng,
 };
+
+const PARAM_FILE_NAME: &str = "params.json";
 
 const DEFAULT_NUM_CHANNELS: u32 = 1;
 const DEFAULT_NUM_TS: u32       = 1000; // ms
@@ -79,65 +82,88 @@ impl Channel {
  *
  * for safety, asserts that the sum of the p.0s == num_ts
  */
-fn generate_stimulus(stim_intervals: &Vec<(u32, f32)>, num_ts: u32) -> Vec<f32> {
-    assert_eq!(num_ts, stim_intervals.iter().map(|&p| p.0).sum());
+fn generate_stimulus(stim_intervals: &json::JsonValue, num_ts: u32) -> Vec<f32> {
+    assert!(stim_intervals.is_array());
     let mut stim: Vec<f32> = vec![];
-    for (t, v) in stim_intervals.iter() {
-        for _ in 0..(*t) {
-            stim.push(*v);
+    for pair in stim_intervals.members() {
+        for _ in 0..(pair["step_dt"].as_u32().unwrap()) {
+            stim.push(pair["step_v"].as_f32().unwrap());
         }
     }
     stim
 }
 
+#[derive(Debug)]
+pub struct ChannelRateParams {
+    pub open_rate: f32,
+    pub open_exp_const: f32,
+    pub close_rate: f32,
+    pub close_exp_const: f32,
+}
+
+impl ChannelRateParams {
+    fn from(init_open_rate: f32,
+            open_exp_const: f32,
+            init_close_rate: f32,
+            close_exp_const: f32) -> Self {
+       ChannelRateParams {
+        open_rate: init_open_rate,
+        open_exp_const: open_exp_const,
+        close_rate: init_close_rate,
+        close_exp_const: close_exp_const
+       } 
+    }
+}
+
+#[derive(Debug)]
 pub struct Simulation {
     pub num_channels: u32,
     pub num_ts: u32,
-    pub open_rate: f32,
-    pub close_rate: f32,
     pub channels: Vec<Channel>,
     pub stimulus: Vec<f32>,
     pub transition_matrix: [[f32; 5]; 5],
+    pub channel_rate_params: ChannelRateParams,
 }
 
 impl Simulation {
     fn from(num_channels: u32,
             num_ts: u32,
-            init_open_rate: f32,
-            init_close_rate: f32,
-            stim_intervals: &Vec<(u32, f32)>) -> Self {
+            channel_rate_params: ChannelRateParams,
+            stim_intervals: &json::JsonValue) -> Self {
         Simulation {
             num_channels: num_channels,
             num_ts: num_ts,
-            open_rate: init_open_rate,
-            close_rate: init_close_rate,
             channels: vec![Channel::new(); num_channels as usize],
             stimulus: generate_stimulus(stim_intervals, num_ts),
             transition_matrix: [
-    [            0.0,  4.0 * init_open_rate,                   0.0,                   0.0,            0.0],
-    [init_close_rate,                   0.0,  3.0 * init_open_rate,                   0.0,            0.0],
-    [            0.0, 2.0 * init_close_rate,                   0.0,  2.0 * init_open_rate,            0.0],
-    [            0.0,                   0.0, 3.0 * init_close_rate,                   0.0, init_open_rate],
-    [            0.0,                   0.0,                   0.0, 4.0 * init_close_rate,            0.0],
+                [0.0, 4.0 * channel_rate_params.open_rate, 0.0, 0.0, 0.0],
+                [channel_rate_params.close_rate, 0.0, 3.0 * channel_rate_params.open_rate, 0.0, 0.0],
+                [0.0, 2.0 * channel_rate_params.close_rate, 0.0, 2.0 * channel_rate_params.open_rate, 0.0],
+                [0.0, 0.0, 3.0 * channel_rate_params.close_rate, 0.0, channel_rate_params.open_rate],
+                [0.0, 0.0, 0.0, 4.0 * channel_rate_params.close_rate, 0.0],
             ],
+            channel_rate_params: channel_rate_params,
         }
     }
 
     fn update_rates(&mut self, ts: u32) {
         // for now: hard-coding in values for delayed K+ rectifier conductance
-        self.open_rate = DEFAULT_OPEN_RATE * (0.04 * self.stimulus[ts as usize]).exp();
-        self.close_rate = DEFAULT_CLOSE_RATE * (-0.0125 * self.stimulus[ts as usize]).exp();
+        self.channel_rate_params.open_rate =
+            DEFAULT_OPEN_RATE *
+            (self.channel_rate_params.open_exp_const * self.stimulus[ts as usize]).exp();
+        self.channel_rate_params.close_rate =
+            DEFAULT_CLOSE_RATE *
+            (self.channel_rate_params.close_exp_const * self.stimulus[ts as usize]).exp();
     }
 
     fn update_transition_matrix(&mut self) {
-            self.transition_matrix = [
-    [            0.0,  4.0 * self.open_rate,                   0.0,                   0.0,            0.0],
-    [self.close_rate,                   0.0,  3.0 * self.open_rate,                   0.0,            0.0],
-    [            0.0, 2.0 * self.close_rate,                   0.0,  2.0 * self.open_rate,            0.0],
-    [            0.0,                   0.0, 3.0 * self.close_rate,                   0.0, self.open_rate],
-    [            0.0,                   0.0,                   0.0, 4.0 * self.close_rate,            0.0],
-            ];
-
+        self.transition_matrix = [
+            [0.0, 4.0 * self.channel_rate_params.open_rate, 0.0, 0.0, 0.0],
+            [self.channel_rate_params.close_rate, 0.0, 3.0 * self.channel_rate_params.open_rate, 0.0, 0.0],
+            [0.0, 2.0 * self.channel_rate_params.close_rate, 0.0, 2.0 * self.channel_rate_params.open_rate, 0.0],
+            [0.0, 0.0, 3.0 * self.channel_rate_params.close_rate, 0.0, self.channel_rate_params.open_rate],
+            [0.0, 0.0, 0.0, 4.0 * self.channel_rate_params.close_rate, 0.0]
+        ];
     }
 
     fn run(&mut self) {
@@ -147,26 +173,25 @@ impl Simulation {
             for channel in &mut self.channels {
                 channel.make_transition(&self.transition_matrix);
                 println!("ts: {ts}, state: {:?}", channel.state);
-                //if channel.state == ChannelState::Open {
-                //}
             }
         }
     }
 }
 
-/*
- * Couple of fixes:
- * c. need to create function to generate stimulus
- * d. even later: put all relevant params in json and read from
- */
 fn main() -> Result<(), Error> {
     // initial values for delayed K+ rectifier conductance
-    let stimulus: Vec<(u32, f32)> = vec![(15, -100.0), (20, 10.0), (15, -100.0)];
-    let mut model_sim = Simulation::from(1,
-                                         50,
-                                         DEFAULT_OPEN_RATE,
-                                         DEFAULT_CLOSE_RATE,
-                                         &stimulus);
+    let param_str: String = fs::read_to_string(PARAM_FILE_NAME)?;
+    let params_json = json::parse(param_str.as_str()).unwrap();
+    let mut model_sim = Simulation::from(params_json["num_channels"].as_u32().unwrap(),
+                                         params_json["num_ts"].as_u32().unwrap(),
+                                         ChannelRateParams::from(
+                                            params_json["init_open_rate"].as_f32().unwrap(),
+                                            params_json["open_exp_const"].as_f32().unwrap(),
+                                            params_json["init_close_rate"].as_f32().unwrap(),
+                                            params_json["close_exp_const"].as_f32().unwrap(),
+                                        ),
+                                         &params_json["stimulus"]);
+
     model_sim.run();
 
     Ok(())

@@ -1,0 +1,22 @@
+{
+  "init_open_rate" : 1.22,
+  "open_exp_const" : 0.04,
+  "init_close_rate" : 0.056,
+  "close_exp_const" : -0.0125,
+  "num_channels" : 1,
+  "num_ts" : 50,
+  "stimulus" : [
+    {
+      "step_dt" : 15,
+      "step_v" : -100.0
+    },
+    {
+      "step_dt" : 20,
+      "step_v" : 10.0
+    },
+    {
+      "step_dt" : 15,
+      "step_v" : -100.0
+    }
+  ]
+}
