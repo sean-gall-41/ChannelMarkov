@@ -241,8 +241,7 @@ impl Simulation {
 // probabilities over time
 fn main() -> Result<(), Error> {
     // initial values for delayed K+ rectifier conductance
-    let param_str: String = fs::read_to_string(PARAM_FILE_NAME)?;
-    let params_json = json::parse(param_str.as_str()).unwrap();
+    let params_json = json::parse(fs::read_to_string(PARAM_FILE_NAME)?.as_str()).unwrap();
     let mut model_sim = Simulation::from(params_json["num_channels"].as_u32().unwrap(),
                                          params_json["num_ts"].as_u32().unwrap(),
                                          ChannelRateParams::from(
