@@ -10,9 +10,6 @@ use rand_distr::{Normal};
 
 const PARAM_FILE_NAME: &str = "params.json";
 
-const DEFAULT_NUM_CHANNELS: u32 = 1;
-const DEFAULT_NUM_TS: u32       = 1000; // ms
-const DEFAULT_STIM_MV: f32      = 10.0;
 const DEFAULT_OPEN_RATE: f32    = 1.22;
 const DEFAULT_CLOSE_RATE: f32   = 0.056;
 
@@ -52,12 +49,14 @@ impl Distribution<ChannelState> for Standard {
 #[derive(Debug, Clone)]
 pub struct Channel {
     pub state: ChannelState,
+    pub emis: f32
 }
 
 impl Channel {
     fn new() -> Self {
         Channel {
             state: rand::random(),
+            emis: 0.0f32
         }
     }
 
@@ -74,19 +73,19 @@ impl Channel {
     fn sample_emission(&mut self, emis_dist: &EmisDist) {
         match self.state {
             ChannelState::Closed1 => {
-                println!("{}", emis_dist.closed_1_dist.sample(&mut rand::thread_rng()));
+                self.emis = emis_dist.closed_1_dist.sample(&mut rand::thread_rng());
             },
             ChannelState::Closed2 => {
-                println!("{}", emis_dist.closed_2_dist.sample(&mut rand::thread_rng()));
+                self.emis = emis_dist.closed_2_dist.sample(&mut rand::thread_rng());
             },
             ChannelState::Closed3 => {
-                println!("{}", emis_dist.closed_3_dist.sample(&mut rand::thread_rng()));
+                self.emis = emis_dist.closed_3_dist.sample(&mut rand::thread_rng());
             },
             ChannelState::Closed4 => {
-                println!("{}", emis_dist.closed_4_dist.sample(&mut rand::thread_rng()));
+                self.emis = emis_dist.closed_4_dist.sample(&mut rand::thread_rng());
             },
             ChannelState::Open => {
-                println!("{}", emis_dist.open_dist.sample(&mut rand::thread_rng()));
+                self.emis = emis_dist.open_dist.sample(&mut rand::thread_rng());
             },
         }
     }
@@ -133,7 +132,7 @@ impl ChannelRateParams {
         open_exp_const: open_exp_const,
         close_rate: init_close_rate,
         close_exp_const: close_exp_const
-       } 
+       }
     }
 }
 
@@ -228,13 +227,18 @@ impl Simulation {
             self.update_transition_matrix();
             for channel in &mut self.channels {
                 channel.make_transition(&self.transition_matrix);
-                println!("ts: {ts}, state: {:?}", channel.state);
                 channel.sample_emission(&self.emis_dists);
+                println!("ts: {ts}, state: {:?}, emis: {}", channel.state, channel.emis);
             }
         }
     }
 }
 
+// FIXME: transition matrix requires diagonal elements to satisfy prob dist req
+// (see https://link.springer.com/referenceworkentry/10.1007/978-1-4614-6675-8_131)
+//
+// FIXME: change make_transition function: use transition rates and simulate channel
+// probabilities over time
 fn main() -> Result<(), Error> {
     // initial values for delayed K+ rectifier conductance
     let param_str: String = fs::read_to_string(PARAM_FILE_NAME)?;
