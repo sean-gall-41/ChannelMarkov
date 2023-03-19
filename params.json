@@ -4,18 +4,18 @@
   "init_close_rate" : 0.056,
   "close_exp_const" : -0.0125,
   "num_channels" : 1,
-  "num_ts" : 50,
+  "num_ts" : 1000,
   "stimulus" : [
     {
-      "step_dt" : 15,
+      "step_dt" : 300,
       "step_v" : -100.0
     },
     {
-      "step_dt" : 20,
+      "step_dt" : 400,
       "step_v" : 10.0
     },
     {
-      "step_dt" : 15,
+      "step_dt" : 300,
       "step_v" : -100.0
     }
   ],

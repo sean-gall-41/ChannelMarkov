@@ -248,7 +248,7 @@ impl Simulation {
 //
 // FIXME: change make_transition function: use transition rates and simulate channel
 // probabilities over time
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Error> {
     // initial values for delayed K+ rectifier conductance
     let params_json = json::parse(fs::read_to_string(PARAM_FILE_NAME)?.as_str()).unwrap();
     let mut model_sim = Simulation::from(params_json["num_channels"].as_u32().unwrap(),
@@ -265,42 +265,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     model_sim.run();
 
     // it's plotting time
-    let root = BitMapBackend::new(OUT_IMG_FILE_NAME, (1024, 600)).into_drawing_area();
+    let root = BitMapBackend::new(OUT_IMG_FILE_NAME, (1024, 768)).into_drawing_area();
 
     root.fill(&WHITE)?;
 
     let mut chart = ChartBuilder::on(&root)
         .margin(10)
         .caption(
-            "Observed Sequence",
-            ("sans-serif", 40),
-        )
-        .set_label_area_size(LabelAreaPosition::Left, 60)
-        .set_label_area_size(LabelAreaPosition::Right, 60)
-        .set_label_area_size(LabelAreaPosition::Bottom, 40)
-        .build_cartesian_2d(0u32..model_sim.num_ts, -2.0f32..7f32)?;
-
-    chart
-        .configure_mesh()
-        .disable_x_mesh()
-        .disable_y_mesh()
-        .x_labels(6)
-        .max_light_lines(4)
-        .y_desc("Current (pA)")
-        .draw()?;
-
-    for channel in model_sim.channels {
-        chart.draw_series(LineSeries::new(
-            channel.emis_hist.iter().enumerate().map(|(ts, e)| {
-                (ts as u32, *e)
-            }),
-            &BLUE,
-        ))?;
-    }
-
-    root.present().expect("Unable to write result to file.");
-    println!("Result have been saved to {}", OUT_IMG_FILE_NAME);
-
+            "Observed Sequence"
+            )
 
     Ok(())
 }
