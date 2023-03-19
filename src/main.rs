@@ -268,28 +268,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let root = BitMapBackend::new(OUT_IMG_FILE_NAME, (1024, 600)).into_drawing_area();
     root.fill(&WHITE)?;
     let root = root.titled("State and Emission Sequences", ("sans-serif", 40))?;
-    //let (upper, lower) = root.split_vertically(80);
-
-    //let mut chart = ChartBuilder::on(&upper)
-    //    .margin(10)
-    //    .set_label_area_size(LabelAreaPosition::Left, 45)
-    //    .build_cartesian_2d(0u32..model_sim.num_ts, 0u32..4u32)?;
-
-    //chart
-    //    .configure_mesh()
-    //    .disable_x_mesh()
-    //    .disable_y_mesh()
-    //    .y_desc("state")
-    //    .draw()?;
-
-    //for channel in &model_sim.channels {
-    //    chart.draw_series(LineSeries::new(
-    //        channel.state_hist.iter().enumerate().map(|(ts, s)| {
-    //            (ts as u32, *s as u32)
-    //        }),
-    //        &full_palette::ORANGE,
-    //    ))?;
-    //}
 
     let mut chart = ChartBuilder::on(&root)
         .margin(10)
