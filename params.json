@@ -1,45 +1,49 @@
 {
+  "rate_comment" : "all rates reported in inverse ms",
   "init_open_rate" : 1.22,
   "open_exp_const" : 0.04,
   "init_close_rate" : 0.056,
   "close_exp_const" : -0.0125,
   "num_channels" : 1,
-  "total_time" : 1,
+  "total_time_comment" : "total time in ms",
+  "total_time" : 20,
   "dt" : 0.001,
+  "stimulus_comment" : "stimulus dt is in ms, voltage in mV",
   "stimulus" : [
     {
-      "step_dt" : 0.3,
+      "step_dt" : 10,
       "step_v" : -100.0
     },
     {
-      "step_dt" : 0.4,
+      "step_dt" : 5,
       "step_v" : 10.0
     },
     {
-      "step_dt" : 0.3,
+      "step_dt" : 10,
       "step_v" : -100.0
     }
   ],
+  "emissions_comment" : "values are reported in pA",
   "emissions" : [
     {
       "mu" : 0.0,
-      "sigma" : 1.0
+      "sigma" : 0.01
     },
     {
-      "mu" : 2.0,
-      "sigma" : 1.0
+      "mu" : 0.0,
+      "sigma" : 0.01
     },
     {
-      "mu" : 3.0,
-      "sigma" : 1.0
+      "mu" : 0.0,
+      "sigma" : 0.01
     },
     {
-      "mu" : 4.0,
-      "sigma" : 1.0
+      "mu" : 0.0,
+      "sigma" : 0.01
     },
     {
       "mu" : 5.0,
-      "sigma" : 1.0
+      "sigma" : 0.5
     }
   ]
 }

@@ -50,31 +50,41 @@ impl Distribution<ChannelState> for Standard {
 
 #[derive(Debug, Clone)]
 pub struct Channel {
+    pub occ_time: f32,
     pub state: ChannelState,
     pub emis: f32,
-    pub state_hist: Vec<u32>,
-    pub emis_hist: Vec<f32>
+    pub state_hist: Vec<(f32, u32)>,
+    //pub emis_hist: Vec<f32>
 }
 
 impl Channel {
     fn new() -> Self {
         Channel {
+            occ_time: 0.0,
             state: rand::random(),
             emis: 0.0f32,
             state_hist: vec![], // look, I'm not going to say this is the fastest solution...
-            emis_hist: vec![],
+            //emis_hist: vec![],
         }
     }
 
-    fn make_transition(&mut self, transition_matrix: &[[f32; 5]; 5]) {
-        let transition_row = transition_matrix[self.state as usize];
+    fn compute_occupancy_time(&mut self, occ_rates: &[f32; 5]) {
+        let occ_rate = occ_rates[self.state as usize];
+        let r: f32 = rand::random::<f32>();
+        // need to tweak this due to log(u) for u -> 0.0
+        self.occ_time = - (1.0 / occ_rate) * r.ln();
+        self.state_hist.push((self.occ_time, self.state as u32));
+    }
+
+    fn make_transition(&mut self, cond_trans_matrix: &[[f32; 5]; 5]) {
+        let transition_row = cond_trans_matrix[self.state as usize];
         let dist = WeightedIndex::new(&transition_row).unwrap();
         let transition_prob = transition_row[dist.sample(&mut rand::thread_rng())];
         self.state = unsafe { ::std::mem::transmute(transition_row.iter()
                                                                   .position(|&r| r == transition_prob)
                                                                   .unwrap() as i32)
         };
-        self.state_hist.push(self.state as u32);
+        //self.state_hist.push(self.state as u32);
     }
 
     fn sample_emission(&mut self, emis_dist: &EmisDist) {
@@ -95,7 +105,7 @@ impl Channel {
                 self.emis = emis_dist.open_dist.sample(&mut rand::thread_rng());
             },
         }
-        self.emis_hist.push(self.emis);
+        //self.emis_hist.push(self.emis);
     }
 
 }
@@ -111,39 +121,31 @@ impl Channel {
  *
  * for safety, asserts that the sum of the p.0s == num_ts
  */
-fn generate_stimulus(stim_intervals: &json::JsonValue, total_time: f32, dt: f32) -> Vec<f32> {
+fn generate_stimulus(stim_intervals: &json::JsonValue) -> Vec<(f32, f32)> {
     assert!(stim_intervals.is_array());
-    let num_ts = (total_time / dt) as usize + 1usize;
-    let mut stim: Vec<f32> = vec![0.0; num_ts];
-    let mut ts_offset: usize = 0;
-    for pair in stim_intervals.members() {
-        let interval_num_ts = (pair["step_dt"].as_f32().unwrap() / dt) as usize;
-        let interval_step_v: f32 = pair["step_v"].as_f32().unwrap();
-        for ts in ts_offset..(ts_offset + interval_num_ts) {
-            stim[ts] = interval_step_v;
-        }
-        ts_offset += interval_num_ts;
-    }
+    let stim: Vec<(f32, f32)> = stim_intervals.members().map(|p| {
+        (p["step_dt"].as_f32().unwrap(), p["step_v"].as_f32().unwrap())
+    }).collect();
     stim
 }
 
 #[derive(Debug)]
 pub struct ChannelRateParams {
-    pub open_prob: f32,
+    pub open_rate: f32,
     pub open_exp_const: f32,
-    pub close_prob: f32,
+    pub close_rate: f32,
     pub close_exp_const: f32,
 }
 
 impl ChannelRateParams {
-    fn from(init_open_prob: f32,
+    fn from(init_open_rate: f32,
             open_exp_const: f32,
-            init_close_prob: f32,
+            init_close_rate: f32,
             close_exp_const: f32) -> Self {
        ChannelRateParams {
-        open_prob: init_open_prob,
+        open_rate: init_open_rate,
         open_exp_const: open_exp_const,
-        close_prob: init_close_prob,
+        close_rate: init_close_rate,
         close_exp_const: close_exp_const
        }
     }
@@ -186,11 +188,52 @@ pub struct Simulation {
     pub total_time: u32,
     pub dt: f32,
     pub channels: Vec<Channel>,
-    pub stimulus: Vec<f32>,
+    pub stimulus: Vec<(f32, f32)>,
     pub emis_dists: EmisDist,
-    pub transition_matrix: [[f32; 5]; 5],
+    pub cum_emis_hist: Vec<f32>,
+    pub occ_rates: [f32; 5],
+    pub cond_trans_matrix: [[f32; 5]; 5],
     pub c_r_p: ChannelRateParams,
 }
+
+
+fn generate_occ_rates(c_r_p: &ChannelRateParams) -> [f32; 5] {
+    [4.0 * c_r_p.open_rate,
+     3.0 * c_r_p.open_rate + c_r_p.close_rate,
+     2.0 * (c_r_p.open_rate + c_r_p.close_rate),
+     c_r_p.open_rate + 3.0 * c_r_p.close_rate,
+     4.0 * c_r_p.close_rate]
+}
+
+fn generate_cond_trans_matrix(c_r_p: &ChannelRateParams) -> [[f32; 5]; 5] {
+    [
+        [0.0, 1.0, 0.0, 0.0, 0.0],
+        [c_r_p.close_rate / (3.0 * c_r_p.open_rate + c_r_p.close_rate), 0.0, (3.0 * c_r_p.open_rate) / (3.0 * c_r_p.open_rate + c_r_p.close_rate), 0.0, 0.0],
+        [0.0, c_r_p.close_rate / (c_r_p.open_rate + c_r_p.close_rate), 0.0, c_r_p.open_rate / (c_r_p.open_rate + c_r_p.close_rate), 0.0],
+        [0.0, 0.0, (3.0 * c_r_p.close_rate) / (c_r_p.open_rate + 3.0 * c_r_p.close_rate), 0.0, c_r_p.open_rate / (c_r_p.open_rate + 3.0 * c_r_p.close_rate)],
+        [0.0, 0.0, 0.0, 1.0, 0.0],
+    ]
+}
+
+fn update_rates(c_r_p: &mut ChannelRateParams, stim: &Vec<(f32, f32)>, index: usize) {
+    // for now: hard-coding in values for delayed K+ rectifier conductance
+    c_r_p.open_rate =
+        DEFAULT_OPEN_RATE *
+        (c_r_p.open_exp_const * stim[index].1).exp();
+    c_r_p.close_rate =
+        DEFAULT_CLOSE_RATE *
+        (c_r_p.close_exp_const * stim[index].1).exp();
+}
+
+//fn update_occ_rates(c_r_p: &ChannelRateParams, occ_rates: &mut [f32; 5]) {
+//    occ_rates = generate_occ_rates(c_r_p);
+//}
+
+//fn update_cond_trans_matrix(&mut self) {
+//    self.cond_trans_matrix =  generate_cond_trans_matrix(&self.c_r_p);
+//}
+
+
 
 impl Simulation {
     fn from(num_channels: u32,
@@ -204,46 +247,34 @@ impl Simulation {
             total_time: total_time,
             dt: dt,
             channels: vec![Channel::new(); num_channels as usize],
-            stimulus: generate_stimulus(stim_intervals, total_time as f32, dt),
+            stimulus: generate_stimulus(stim_intervals),
             emis_dists: EmisDist::from(emis_params),
-            transition_matrix: [
-                [0.0, 4.0 * c_r_p.open_prob, 0.0, 0.0, 0.0],
-                [c_r_p.close_prob, 0.0, 3.0 * c_r_p.open_prob, 0.0, 0.0],
-                [0.0, 2.0 * c_r_p.close_prob, 0.0, 2.0 * c_r_p.open_prob, 0.0],
-                [0.0, 0.0, 3.0 * c_r_p.close_prob, 0.0, c_r_p.open_prob],
-                [0.0, 0.0, 0.0, 4.0 * c_r_p.close_prob, 0.0],
-            ],
+            cum_emis_hist: vec![],
+            occ_rates: generate_occ_rates(&c_r_p),
+            cond_trans_matrix: generate_cond_trans_matrix(&c_r_p),
             c_r_p: c_r_p,
         }
     }
 
-    fn update_probs(&mut self, ts: u32) {
-        // for now: hard-coding in values for delayed K+ rectifier conductance
-        self.c_r_p.open_prob =
-            DEFAULT_OPEN_RATE *
-            (self.c_r_p.open_exp_const * self.stimulus[ts as usize]).exp() * self.dt;
-        self.c_r_p.close_prob =
-            DEFAULT_CLOSE_RATE *
-            (self.c_r_p.close_exp_const * self.stimulus[ts as usize]).exp() * self.dt;
-    }
-
-    fn update_transition_matrix(&mut self) {
-        self.transition_matrix = [
-            [0.0, 4.0 * self.c_r_p.open_prob, 0.0, 0.0, 0.0],
-            [self.c_r_p.close_prob, 0.0, 3.0 * self.c_r_p.open_prob, 0.0, 0.0],
-            [0.0, 2.0 * self.c_r_p.close_prob, 0.0, 2.0 * self.c_r_p.open_prob, 0.0],
-            [0.0, 0.0, 3.0 * self.c_r_p.close_prob, 0.0, self.c_r_p.open_prob],
-            [0.0, 0.0, 0.0, 4.0 * self.c_r_p.close_prob, 0.0]
-        ];
-    }
-
     fn run(&mut self) {
-        for ts in 0..((self.total_time as f32 / self.dt) as u32) {
-            self.update_probs(ts);
-            self.update_transition_matrix();
-            for channel in &mut self.channels {
-                channel.make_transition(&self.transition_matrix);
-                channel.sample_emission(&self.emis_dists);
+        for channel in &mut self.channels {
+            let mut ts: f32 = 0.0;
+            let mut stim_id: usize = 0;
+            update_rates(&mut self.c_r_p, &self.stimulus, stim_id);
+            //update_occ_rates(&self.c_r_p, &mut self.occ_rates);
+            //self.update_cond_trans_matrix();
+            while ts < (self.total_time as f32) {
+                if ts > self.stimulus[stim_id].0 {
+                    stim_id += 1;
+                    update_rates(&mut self.c_r_p, &self.stimulus, stim_id); // only update rates once we've asynchonously
+                                                // crossed a piec-wise voltage step boundary
+                    //update_occ_rates(&self.c_r_p, &mut self.occ_rates);
+                    //self.update_cond_trans_matrix();
+                }
+                channel.compute_occupancy_time(&self.occ_rates);
+                channel.make_transition(&self.cond_trans_matrix);
+                ts += channel.occ_time;
+                println!("{}, {:?}", ts, self.occ_rates);
             }
         }
     }
@@ -256,11 +287,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                          params_json["total_time"].as_u32().unwrap(),
                                          params_json["dt"].as_f32().unwrap(),
                                          ChannelRateParams::from(
-                                            params_json["init_open_rate"].as_f32().unwrap()
-                                            * params_json["dt"].as_f32().unwrap(),
+                                            params_json["init_open_rate"].as_f32().unwrap(),
                                             params_json["open_exp_const"].as_f32().unwrap(),
-                                            params_json["init_close_rate"].as_f32().unwrap()
-                                            * params_json["dt"].as_f32().unwrap(),
+                                            params_json["init_close_rate"].as_f32().unwrap(),
                                             params_json["close_exp_const"].as_f32().unwrap(),
                                         ),
                                          &params_json["stimulus"],
@@ -269,43 +298,43 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     model_sim.run();
 
     // it's plotting time
-    let root = BitMapBackend::new(OUT_IMG_FILE_NAME, (1024, 600)).into_drawing_area();
-    root.fill(&WHITE)?;
-    let root = root.titled("State and Emission Sequences", ("sans-serif", 40))?;
+    //let root = BitMapBackend::new(OUT_IMG_FILE_NAME, (1024, 600)).into_drawing_area();
+    //root.fill(&WHITE)?;
+    //let root = root.titled("State and Emission Sequences", ("sans-serif", 40))?;
 
-    let mut chart = ChartBuilder::on(&root)
-        .margin(10)
-        .set_label_area_size(LabelAreaPosition::Left, 45)
-        .set_label_area_size(LabelAreaPosition::Bottom, 40)
-        .build_cartesian_2d(-50f32..((model_sim.total_time as f32) / model_sim.dt + 50f32),
-                                                -4.0f32..14.0f32)?;
+    //let mut chart = ChartBuilder::on(&root)
+    //    .margin(10)
+    //    .set_label_area_size(LabelAreaPosition::Left, 45)
+    //    .set_label_area_size(LabelAreaPosition::Bottom, 40)
+    //    .build_cartesian_2d(-50f32..((model_sim.total_time as f32) / model_sim.dt + 50f32),
+    //                                            -4.0f32..14.0f32)?;
 
-    chart
-        .configure_mesh()
-        .disable_x_mesh()
-        .disable_y_mesh()
-        .x_labels(6)
-        .x_desc("time (microsecs)")
-        .y_desc("Current (pA)")
-        .draw()?;
+    //chart
+    //    .configure_mesh()
+    //    .disable_x_mesh()
+    //    .disable_y_mesh()
+    //    .x_labels(6)
+    //    .x_desc("time (microsecs)")
+    //    .y_desc("Current (pA)")
+    //    .draw()?;
 
-    for channel in model_sim.channels {
-        chart.draw_series(LineSeries::new(
-            channel.state_hist.iter().enumerate().map(|(ts, s)| {
-                (ts as f32, 0.65f32 * (*s as f32) + 10f32)
-            }),
-            &full_palette::ORANGE,
-        ))?;
-        chart.draw_series(LineSeries::new(
-            channel.emis_hist.iter().enumerate().map(|(ts, e)| {
-                (ts as f32, *e)
-            }),
-            &BLUE,
-        ))?;
-    }
+    //for channel in model_sim.channels {
+    //    chart.draw_series(LineSeries::new(
+    //        channel.state_hist.iter().enumerate().map(|(ts, s)| {
+    //            (ts as f32, 0.65f32 * (*s as f32) + 10f32)
+    //        }),
+    //        &full_palette::ORANGE,
+    //    ))?;
+    //    chart.draw_series(LineSeries::new(
+    //        channel.emis_hist.iter().enumerate().map(|(ts, e)| {
+    //            (ts as f32, *e)
+    //        }),
+    //        &BLUE,
+    //    ))?;
+    //}
 
-    root.present().expect("Unable to write result to file.");
-    println!("Result have been saved to {}", OUT_IMG_FILE_NAME);
+    //root.present().expect("Unable to write result to file.");
+    //println!("Result have been saved to {}", OUT_IMG_FILE_NAME);
 
     Ok(())
 }
