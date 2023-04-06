@@ -5,7 +5,7 @@
   "close_exp_const" : -0.0125,
   "num_channels" : 1,
   "total_time" : 200,
-  "dt" : 0.1,
+  "dt" : 0.001,
   "stimulus" : [
     {
       "step_t" : 0,
@@ -13,7 +13,7 @@
     },
     {
       "step_t" : 50,
-      "step_v" : 10.0
+      "step_v" : -60.0
     },
     {
       "step_t" : 150,
@@ -23,23 +23,23 @@
   "emissions" : [
     {
       "mu" : 0.0,
-      "sigma" : 0.5
+      "sigma" : 0.3
     },
     {
-      "mu" : 1.0,
-      "sigma" : 0.5
+      "mu" : 0.0,
+      "sigma" : 0.3
     },
     {
-      "mu" : 2.0,
-      "sigma" : 0.5
+      "mu" : 0.0,
+      "sigma" : 0.3
     },
     {
-      "mu" : 3.0,
-      "sigma" : 0.5
+      "mu" : 0.0,
+      "sigma" : 0.3
     },
     {
       "mu" : 6.0,
-      "sigma" : 1.0
+      "sigma" : 0.5
     }
   ]
 }
