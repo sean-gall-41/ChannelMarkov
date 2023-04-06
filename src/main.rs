@@ -66,8 +66,8 @@ impl Channel {
         }
     }
 
-    fn make_transition(&mut self, transition_matrix: &[[f32; 5]; 5]) {
-        let transition_row = transition_matrix[self.state as usize];
+    fn make_transition(&mut self, trans_matrix: &[[f32; 5]; 5]) {
+        let transition_row = trans_matrix[self.state as usize];
         let dist = WeightedIndex::new(&transition_row).unwrap();
         let transition_prob = transition_row[dist.sample(&mut rand::thread_rng())];
         self.state = unsafe { ::std::mem::transmute(transition_row.iter()
@@ -189,7 +189,7 @@ pub struct Simulation {
     pub channels: Vec<Channel>,
     pub stimulus: Vec<(f32, f32)>,
     pub emis_dists: EmisDist,
-    pub transition_matrix: [[f32; 5]; 5],
+    pub trans_matrix: [[f32; 5]; 5],
     pub c_r_p: ChannelRateParams,
 }
 
@@ -207,7 +207,7 @@ impl Simulation {
             channels: vec![Channel::new(); num_channels as usize],
             stimulus: generate_stimulus(stim_intervals),
             emis_dists: EmisDist::from(emis_params),
-            transition_matrix: generate_trans_matrix(&c_r_p),
+            trans_matrix: generate_trans_matrix(&c_r_p),
             c_r_p: c_r_p,
         }
     }
@@ -222,8 +222,8 @@ impl Simulation {
             (self.c_r_p.close_exp_const * voltage).exp() * self.dt;
     }
 
-    fn update_transition_matrix(&mut self) {
-        self.transition_matrix = generate_trans_matrix(&self.c_r_p);
+    fn update_trans_matrix(&mut self) {
+        self.trans_matrix = generate_trans_matrix(&self.c_r_p);
     }
 
     fn run(&mut self) {
@@ -231,11 +231,11 @@ impl Simulation {
         for ts in 0..((self.total_time as f32 / self.dt) as u32) {
             if stim_id < self.stimulus.len() && ts == (self.stimulus[stim_id].0 / self.dt) as u32 {
                 self.update_probs(self.stimulus[stim_id].1);
-                self.update_transition_matrix();
+                self.update_trans_matrix();
                 stim_id += 1;
             }
             for channel in &mut self.channels {
-                channel.make_transition(&self.transition_matrix);
+                channel.make_transition(&self.trans_matrix);
                 channel.sample_emission(&self.emis_dists);
             }
         }
