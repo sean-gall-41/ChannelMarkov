@@ -111,19 +111,11 @@ impl Channel {
  *
  * for safety, asserts that the sum of the p.0s == num_ts
  */
-fn generate_stimulus(stim_intervals: &json::JsonValue, total_time: f32, dt: f32) -> Vec<f32> {
+fn generate_stimulus(stim_intervals: &json::JsonValue) -> Vec<(f32, f32)> {
     assert!(stim_intervals.is_array());
-    let num_ts = (total_time / dt) as usize + 1usize;
-    let mut stim: Vec<f32> = vec![0.0; num_ts];
-    let mut ts_offset: usize = 0;
-    for pair in stim_intervals.members() {
-        let interval_num_ts = (pair["step_dt"].as_f32().unwrap() / dt) as usize;
-        let interval_step_v: f32 = pair["step_v"].as_f32().unwrap();
-        for ts in ts_offset..(ts_offset + interval_num_ts) {
-            stim[ts] = interval_step_v;
-        }
-        ts_offset += interval_num_ts;
-    }
+    let stim: Vec<(f32, f32)> = stim_intervals.members().map(|p| {
+        (p["step_t"].as_f32().unwrap(), p["step_v"].as_f32().unwrap())
+    }).collect();
     stim
 }
 
@@ -180,13 +172,22 @@ impl EmisDist {
     }
 }
 
+fn generate_trans_matrix(c_r_p: &ChannelRateParams) -> [[f32; 5]; 5] {
+    [
+        [1.0 - 4.0 * c_r_p.open_prob, 4.0 * c_r_p.open_prob, 0.0, 0.0, 0.0],
+        [c_r_p.close_prob, 1.0 - c_r_p.close_prob - 3.0 * c_r_p.open_prob, 3.0 * c_r_p.open_prob, 0.0, 0.0],
+        [0.0, 2.0 * c_r_p.close_prob, 1.0 - 2.0 * (c_r_p.close_prob + c_r_p.open_prob), 2.0 * c_r_p.open_prob, 0.0],
+        [0.0, 0.0, 3.0 * c_r_p.close_prob, 1.0 - 3.0 * c_r_p.close_prob - c_r_p.open_prob, c_r_p.open_prob],
+        [0.0, 0.0, 0.0, 4.0 * c_r_p.close_prob, 1.0 - 4.0 * c_r_p.close_prob],
+    ]
+}
 #[derive(Debug)]
 pub struct Simulation {
     pub num_channels: u32,
     pub total_time: u32,
     pub dt: f32,
     pub channels: Vec<Channel>,
-    pub stimulus: Vec<f32>,
+    pub stimulus: Vec<(f32, f32)>,
     pub emis_dists: EmisDist,
     pub transition_matrix: [[f32; 5]; 5],
     pub c_r_p: ChannelRateParams,
@@ -204,43 +205,35 @@ impl Simulation {
             total_time: total_time,
             dt: dt,
             channels: vec![Channel::new(); num_channels as usize],
-            stimulus: generate_stimulus(stim_intervals, total_time as f32, dt),
+            stimulus: generate_stimulus(stim_intervals),
             emis_dists: EmisDist::from(emis_params),
-            transition_matrix: [
-                [0.0, 4.0 * c_r_p.open_prob, 0.0, 0.0, 0.0],
-                [c_r_p.close_prob, 0.0, 3.0 * c_r_p.open_prob, 0.0, 0.0],
-                [0.0, 2.0 * c_r_p.close_prob, 0.0, 2.0 * c_r_p.open_prob, 0.0],
-                [0.0, 0.0, 3.0 * c_r_p.close_prob, 0.0, c_r_p.open_prob],
-                [0.0, 0.0, 0.0, 4.0 * c_r_p.close_prob, 0.0],
-            ],
+            transition_matrix: generate_trans_matrix(&c_r_p),
             c_r_p: c_r_p,
         }
     }
 
-    fn update_probs(&mut self, ts: u32) {
+    fn update_probs(&mut self, voltage: f32) {
         // for now: hard-coding in values for delayed K+ rectifier conductance
         self.c_r_p.open_prob =
             DEFAULT_OPEN_RATE *
-            (self.c_r_p.open_exp_const * self.stimulus[ts as usize]).exp() * self.dt;
+            (self.c_r_p.open_exp_const * voltage).exp() * self.dt;
         self.c_r_p.close_prob =
             DEFAULT_CLOSE_RATE *
-            (self.c_r_p.close_exp_const * self.stimulus[ts as usize]).exp() * self.dt;
+            (self.c_r_p.close_exp_const * voltage).exp() * self.dt;
     }
 
     fn update_transition_matrix(&mut self) {
-        self.transition_matrix = [
-            [0.0, 4.0 * self.c_r_p.open_prob, 0.0, 0.0, 0.0],
-            [self.c_r_p.close_prob, 0.0, 3.0 * self.c_r_p.open_prob, 0.0, 0.0],
-            [0.0, 2.0 * self.c_r_p.close_prob, 0.0, 2.0 * self.c_r_p.open_prob, 0.0],
-            [0.0, 0.0, 3.0 * self.c_r_p.close_prob, 0.0, self.c_r_p.open_prob],
-            [0.0, 0.0, 0.0, 4.0 * self.c_r_p.close_prob, 0.0]
-        ];
+        self.transition_matrix = generate_trans_matrix(&self.c_r_p);
     }
 
     fn run(&mut self) {
+        let mut stim_id: usize = 0;
         for ts in 0..((self.total_time as f32 / self.dt) as u32) {
-            self.update_probs(ts);
-            self.update_transition_matrix();
+            if stim_id < self.stimulus.len() && ts == (self.stimulus[stim_id].0 / self.dt) as u32 {
+                self.update_probs(self.stimulus[stim_id].1);
+                self.update_transition_matrix();
+                stim_id += 1;
+            }
             for channel in &mut self.channels {
                 channel.make_transition(&self.transition_matrix);
                 channel.sample_emission(&self.emis_dists);
