@@ -10,7 +10,8 @@ use rand_distr::{Normal};
 use plotters::prelude::*;
 
 const PARAM_FILE_NAME: &'static str = "params.json";
-const OUT_IMG_FILE_NAME: &'static str = "example_trace.png";
+//const OUT_IMG_FILE_NAME: &'static str = "example_trace.png";
+const OUT_IMG_FILE_NAME: &'static str = "example_cum_emis_trace.png";
 
 const DEFAULT_OPEN_RATE: f32    = 1.22;
 const DEFAULT_CLOSE_RATE: f32   = 0.056;
@@ -189,6 +190,7 @@ pub struct Simulation {
     pub channels: Vec<Channel>,
     pub stimulus: Vec<(f32, f32)>,
     pub emis_dists: EmisDist,
+    pub cum_emis: Vec<f32>,
     pub trans_matrix: [[f32; 5]; 5],
     pub c_r_p: ChannelRateParams,
 }
@@ -207,6 +209,7 @@ impl Simulation {
             channels: vec![Channel::new(); num_channels as usize],
             stimulus: generate_stimulus(stim_intervals),
             emis_dists: EmisDist::from(emis_params),
+            cum_emis: vec![0.0; (total_time as f32 / dt) as usize],
             trans_matrix: generate_trans_matrix(&c_r_p),
             c_r_p: c_r_p,
         }
@@ -234,10 +237,13 @@ impl Simulation {
                 self.update_trans_matrix();
                 stim_id += 1;
             }
+            let mut cum_emis_ts: f32 = 0.0;
             for channel in &mut self.channels {
                 channel.make_transition(&self.trans_matrix);
                 channel.sample_emission(&self.emis_dists);
+                cum_emis_ts += channel.emis;
             }
+            self.cum_emis[ts as usize] = cum_emis_ts;
         }
     }
 }
@@ -271,7 +277,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .set_label_area_size(LabelAreaPosition::Left, 45)
         .set_label_area_size(LabelAreaPosition::Bottom, 40)
         .build_cartesian_2d(-50f32..((model_sim.total_time as f32) / model_sim.dt + 50f32),
-                                                -4.0f32..14.0f32)?;
+                                                -4.0f32..650.0f32)?;
 
     chart
         .configure_mesh()
@@ -282,20 +288,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .y_desc("Current (pA)")
         .draw()?;
 
-    for channel in model_sim.channels {
+
         chart.draw_series(LineSeries::new(
-            channel.state_hist.iter().enumerate().map(|(ts, s)| {
-                (ts as f32, 0.65f32 * (*s as f32) + 10f32)
-            }),
-            &full_palette::ORANGE,
-        ))?;
-        chart.draw_series(LineSeries::new(
-            channel.emis_hist.iter().enumerate().map(|(ts, e)| {
+            model_sim.cum_emis.iter().enumerate().map(|(ts, e)| {
                 (ts as f32, *e)
             }),
             &BLUE,
         ))?;
-    }
+
+    //for channel in model_sim.channels {
+    //    chart.draw_series(LineSeries::new(
+    //        channel.state_hist.iter().enumerate().map(|(ts, s)| {
+    //            (ts as f32, 0.65f32 * (*s as f32) + 10f32)
+    //        }),
+    //        &full_palette::ORANGE,
+    //    ))?;
+    //    chart.draw_series(LineSeries::new(
+    //        channel.emis_hist.iter().enumerate().map(|(ts, e)| {
+    //            (ts as f32, *e)
+    //        }),
+    //        &BLUE,
+    //    ))?;
+    //}
 
     root.present().expect("Unable to write result to file.");
     println!("Result have been saved to {}", OUT_IMG_FILE_NAME);
