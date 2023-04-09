@@ -236,12 +236,14 @@ impl Simulation {
                 self.update_probs(self.stimulus[stim_id].1);
                 self.update_trans_matrix();
                 stim_id += 1;
+                // reset for use below, in-case past valid bounds
+                if stim_id == self.stimulus.len() { stim_id -= 1; }
             }
             let mut cum_emis_ts: f32 = 0.0;
             for channel in &mut self.channels {
                 channel.make_transition(&self.trans_matrix);
                 channel.sample_emission(&self.emis_dists);
-                cum_emis_ts += channel.emis;
+                cum_emis_ts -= channel.emis * (self.stimulus[stim_id].1 + 77.0);
             }
             self.cum_emis[ts as usize] = cum_emis_ts;
         }
@@ -277,7 +279,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .set_label_area_size(LabelAreaPosition::Left, 45)
         .set_label_area_size(LabelAreaPosition::Bottom, 40)
         .build_cartesian_2d(-50f32..((model_sim.total_time as f32) / model_sim.dt + 50f32),
-                                                -4.0f32..650.0f32)?;
+                                                -50.0f32..800.0f32)?;
 
     chart
         .configure_mesh()

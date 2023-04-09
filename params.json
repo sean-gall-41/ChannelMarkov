@@ -20,6 +20,7 @@
       "step_v" : -100.0
     }
   ],
+  "emissions_comment" : "emissions now in units of conductance (mS)",
   "emissions" : [
     {
       "mu" : 0.0,
@@ -38,7 +39,7 @@
       "sigma" : 0.0
     },
     {
-      "mu" : 6.0,
+      "mu" : 0.36,
       "sigma" : 0.0
     }
   ]
