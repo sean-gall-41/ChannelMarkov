@@ -11,7 +11,8 @@ use plotters::prelude::*;
 
 const PARAM_FILE_NAME: &'static str = "params.json";
 //const OUT_IMG_FILE_NAME: &'static str = "example_trace.png";
-const OUT_IMG_FILE_NAME: &'static str = "example_cum_emis_trace.png";
+//const OUT_IMG_FILE_NAME: &'static str = "example_cum_emis_trace.png";
+const OUT_IMG_FILE_NAME: &'static str = "example_hhk_emis_trace.png";
 
 const DEFAULT_OPEN_RATE: f32    = 1.22;
 const DEFAULT_CLOSE_RATE: f32   = 0.056;
@@ -182,8 +183,9 @@ fn generate_trans_matrix(c_r_p: &ChannelRateParams) -> [[f32; 5]; 5] {
         [0.0, 0.0, 0.0, 4.0 * c_r_p.close_prob, 1.0 - 4.0 * c_r_p.close_prob],
     ]
 }
+
 #[derive(Debug)]
-pub struct Simulation {
+pub struct HMMSim {
     pub num_channels: u32,
     pub total_time: u32,
     pub dt: f32,
@@ -195,14 +197,14 @@ pub struct Simulation {
     pub c_r_p: ChannelRateParams,
 }
 
-impl Simulation {
+impl HMMSim {
     fn from(num_channels: u32,
             total_time: u32,
             dt: f32,
             c_r_p: ChannelRateParams,
             stim_intervals: &json::JsonValue,
             emis_params: &json::JsonValue) -> Self {
-        Simulation {
+        HMMSim {
             num_channels: num_channels,
             total_time: total_time,
             dt: dt,
@@ -243,6 +245,7 @@ impl Simulation {
             for channel in &mut self.channels {
                 channel.make_transition(&self.trans_matrix);
                 channel.sample_emission(&self.emis_dists);
+                // TODO: un-hardcode params
                 cum_emis_ts -= channel.emis * (self.stimulus[stim_id].1 + 77.0);
             }
             self.cum_emis[ts as usize] = cum_emis_ts;
@@ -250,12 +253,95 @@ impl Simulation {
     }
 }
 
+/*
+ * struct representing the simulation/ updating of the dynamic var n
+ * in the HH scheme
+ */
+pub struct HHKSim {
+    pub total_time: u32,
+    pub dt: f32,
+    pub k_g_max: f32,
+    pub k_probs: Vec<f32>,
+    pub stimulus: Vec<(f32, f32)>,
+    pub emis_hist: Vec<f32>,
+    pub c_r_p: ChannelRateParams
+}
+
+impl HHKSim {
+    fn from(total_time: u32,
+            dt: f32,
+            k_g_max: f32,
+            c_r_p: ChannelRateParams,
+            stim_intervals: &json::JsonValue) -> Self {
+        let mut k_probs_init = vec![0.0; (total_time as f32 / dt) as usize];
+        k_probs_init[0] = 0.5; // initial prob at ts == 0
+        HHKSim {
+            total_time: total_time,
+            dt: dt,
+            k_g_max: k_g_max,
+            k_probs: k_probs_init,
+            stimulus: generate_stimulus(stim_intervals),
+            emis_hist: vec![0.0; (total_time as f32 / dt) as usize],
+            c_r_p: c_r_p,
+        }
+    }
+
+    // here we interpret these guys differently: as rates instead of probs.
+    // the name remains as a prob (my bad, needs refactor) but they are
+    // to be understood as rates
+    fn update_rates(&mut self, voltage: f32) {
+        // for now: hard-coding in values for delayed K+ rectifier conductance
+        self.c_r_p.open_prob =
+            DEFAULT_OPEN_RATE *
+            (self.c_r_p.open_exp_const * voltage).exp();
+        self.c_r_p.close_prob =
+            DEFAULT_CLOSE_RATE *
+            (self.c_r_p.close_exp_const * voltage).exp();
+    }
+    fn run(&mut self) {
+        let mut stim_id: usize = 0;
+        for ts in 1..((self.total_time as f32 / self.dt) as u32) {
+            if stim_id < self.stimulus.len() && (ts-1) == (self.stimulus[stim_id].0 / self.dt) as u32 {
+                self.update_rates(self.stimulus[stim_id].1);
+                stim_id += 1;
+                // reset for use below, in-case past valid bounds
+                //if stim_id == self.stimulus.len() { stim_id -= 1; }
+            }
+            let ts: usize = ts as usize;
+            self.k_probs[ts] = self.k_probs[ts-1]
+                        + ((1.0 - self.k_probs[ts-1]) * self.c_r_p.open_prob
+                        - self.k_probs[ts-1] * self.c_r_p.close_prob) * self.dt;
+
+            self.emis_hist[ts] = self.k_g_max
+                               * self.k_probs[ts].powf(4.0)
+                               * (self.stimulus[stim_id-1].1 + 77.0);
+        }
+    }
+
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // initial values for delayed K+ rectifier conductance
     let params_json = json::parse(fs::read_to_string(PARAM_FILE_NAME)?.as_str()).unwrap();
-    let mut model_sim = Simulation::from(params_json["num_channels"].as_u32().unwrap(),
-                                         params_json["total_time"].as_u32().unwrap(),
+    //let mut model_sim = HMMSim::from(params_json["num_channels"].as_u32().unwrap(),
+    //                                     params_json["total_time"].as_u32().unwrap(),
+    //                                     params_json["dt"].as_f32().unwrap(),
+    //                                     ChannelRateParams::from(
+    //                                        params_json["init_open_rate"].as_f32().unwrap()
+    //                                        * params_json["dt"].as_f32().unwrap(),
+    //                                        params_json["open_exp_const"].as_f32().unwrap(),
+    //                                        params_json["init_close_rate"].as_f32().unwrap()
+    //                                        * params_json["dt"].as_f32().unwrap(),
+    //                                        params_json["close_exp_const"].as_f32().unwrap(),
+    //                                    ),
+    //                                     &params_json["stimulus"],
+    //                                     &params_json["emissions"]);
+
+    //model_sim.run();
+
+    let mut model_hhk_sim = HHKSim::from(params_json["total_time"].as_u32().unwrap(),
                                          params_json["dt"].as_f32().unwrap(),
+                                         params_json["emissions"][4]["mu"].as_f32().unwrap(),
                                          ChannelRateParams::from(
                                             params_json["init_open_rate"].as_f32().unwrap()
                                             * params_json["dt"].as_f32().unwrap(),
@@ -264,10 +350,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             * params_json["dt"].as_f32().unwrap(),
                                             params_json["close_exp_const"].as_f32().unwrap(),
                                         ),
-                                         &params_json["stimulus"],
-                                         &params_json["emissions"]);
+                                         &params_json["stimulus"]);
 
-    model_sim.run();
+    model_hhk_sim.run();
 
     // it's plotting time
     let root = BitMapBackend::new(OUT_IMG_FILE_NAME, (1024, 600)).into_drawing_area();
@@ -278,8 +363,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .margin(10)
         .set_label_area_size(LabelAreaPosition::Left, 45)
         .set_label_area_size(LabelAreaPosition::Bottom, 40)
-        .build_cartesian_2d(-50f32..((model_sim.total_time as f32) / model_sim.dt + 50f32),
-                                                -50.0f32..800.0f32)?;
+        .build_cartesian_2d(-50f32..((model_hhk_sim.total_time as f32) / model_hhk_sim.dt + 50f32),
+                                                -50.0f32..50.0f32)?;
 
     chart
         .configure_mesh()
@@ -290,9 +375,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .y_desc("Current (pA)")
         .draw()?;
 
-
+        //chart.draw_series(LineSeries::new(
+        //    model_sim.cum_emis.iter().enumerate().map(|(ts, e)| {
+        //        (ts as f32, *e)
+        //    }),
+        //    &BLUE,
+        //))?;
         chart.draw_series(LineSeries::new(
-            model_sim.cum_emis.iter().enumerate().map(|(ts, e)| {
+            model_hhk_sim.emis_hist.iter().enumerate().map(|(ts, e)| {
                 (ts as f32, *e)
             }),
             &BLUE,
