@@ -298,14 +298,13 @@ impl HHKSim {
             DEFAULT_CLOSE_RATE *
             (self.c_r_p.close_exp_const * voltage).exp();
     }
+
     fn run(&mut self) {
         let mut stim_id: usize = 0;
         for ts in 1..((self.total_time as f32 / self.dt) as u32) {
             if stim_id < self.stimulus.len() && (ts-1) == (self.stimulus[stim_id].0 / self.dt) as u32 {
                 self.update_rates(self.stimulus[stim_id].1);
                 stim_id += 1;
-                // reset for use below, in-case past valid bounds
-                //if stim_id == self.stimulus.len() { stim_id -= 1; }
             }
             let ts: usize = ts as usize;
             self.k_probs[ts] = self.k_probs[ts-1]
@@ -323,21 +322,21 @@ impl HHKSim {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // initial values for delayed K+ rectifier conductance
     let params_json = json::parse(fs::read_to_string(PARAM_FILE_NAME)?.as_str()).unwrap();
-    //let mut model_sim = HMMSim::from(params_json["num_channels"].as_u32().unwrap(),
-    //                                     params_json["total_time"].as_u32().unwrap(),
-    //                                     params_json["dt"].as_f32().unwrap(),
-    //                                     ChannelRateParams::from(
-    //                                        params_json["init_open_rate"].as_f32().unwrap()
-    //                                        * params_json["dt"].as_f32().unwrap(),
-    //                                        params_json["open_exp_const"].as_f32().unwrap(),
-    //                                        params_json["init_close_rate"].as_f32().unwrap()
-    //                                        * params_json["dt"].as_f32().unwrap(),
-    //                                        params_json["close_exp_const"].as_f32().unwrap(),
-    //                                    ),
-    //                                     &params_json["stimulus"],
-    //                                     &params_json["emissions"]);
+    let mut model_hmm_sim = HMMSim::from(params_json["num_channels"].as_u32().unwrap(),
+                                         params_json["total_time"].as_u32().unwrap(),
+                                         params_json["dt"].as_f32().unwrap(),
+                                         ChannelRateParams::from(
+                                            params_json["init_open_rate"].as_f32().unwrap()
+                                            * params_json["dt"].as_f32().unwrap(),
+                                            params_json["open_exp_const"].as_f32().unwrap(),
+                                            params_json["init_close_rate"].as_f32().unwrap()
+                                            * params_json["dt"].as_f32().unwrap(),
+                                            params_json["close_exp_const"].as_f32().unwrap(),
+                                        ),
+                                         &params_json["stimulus"],
+                                         &params_json["emissions"]);
 
-    //model_sim.run();
+    model_hmm_sim.run();
 
     let mut model_hhk_sim = HHKSim::from(params_json["total_time"].as_u32().unwrap(),
                                          params_json["dt"].as_f32().unwrap(),
@@ -363,8 +362,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .margin(10)
         .set_label_area_size(LabelAreaPosition::Left, 45)
         .set_label_area_size(LabelAreaPosition::Bottom, 40)
-        .build_cartesian_2d(-50f32..((model_hhk_sim.total_time as f32) / model_hhk_sim.dt + 50f32),
-                                                -50.0f32..50.0f32)?;
+        .build_cartesian_2d(-50f32..((model_hmm_sim.total_time as f32) / model_hmm_sim.dt + 50f32),
+                                                (-2.5 * model_hmm_sim.num_channels as f32)..(8.5 * model_hmm_sim.num_channels as f32))?;
 
     chart
         .configure_mesh()
@@ -375,18 +374,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .y_desc("Current (pA)")
         .draw()?;
 
-        //chart.draw_series(LineSeries::new(
-        //    model_sim.cum_emis.iter().enumerate().map(|(ts, e)| {
-        //        (ts as f32, *e)
-        //    }),
-        //    &BLUE,
-        //))?;
-        chart.draw_series(LineSeries::new(
-            model_hhk_sim.emis_hist.iter().enumerate().map(|(ts, e)| {
-                (ts as f32, *e)
-            }),
-            &BLUE,
-        ))?;
+    chart.draw_series(LineSeries::new(
+        model_hmm_sim.cum_emis.iter().enumerate().map(|(ts, e)| {
+            (ts as f32, *e)
+        }),
+        &BLUE,
+    ))?;
+    let max = model_hhk_sim.emis_hist.iter().fold(std::f32::NEG_INFINITY, |a, &b| a.max(b));
+    println!("{max}");
+    chart.draw_series(LineSeries::new(
+        model_hhk_sim.emis_hist.iter().enumerate().map(|(ts, e)| {
+            (ts as f32, max * *e)
+        }),
+        &full_palette::ORANGE,
+    ))?;
 
     //for channel in model_sim.channels {
     //    chart.draw_series(LineSeries::new(
