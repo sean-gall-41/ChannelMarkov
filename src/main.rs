@@ -14,6 +14,13 @@ const PARAM_FILE_NAME: &'static str = "params.json";
 //const OUT_IMG_FILE_NAME: &'static str = "example_cum_emis_trace.png";
 const OUT_IMG_FILE_NAME: &'static str = "example_hhk_emis_trace.png";
 
+/* ====================================================================================
+ * |                                                                                  |
+ * |                           Potassium Channel Modeling                             |
+ * |                                                                                  |
+ * ====================================================================================
+ */
+
 /*
  * Here's the basic state diagram that we're assuming our Markov Model follows:
  *
@@ -110,7 +117,7 @@ impl Channel {
  *
  * for safety, asserts that the sum of the p.0s == num_ts
  */
-fn generate_stimulus(stim_intervals: &json::JsonValue) -> Vec<(f32, f32)> {
+fn gen_stimulus(stim_intervals: &json::JsonValue) -> Vec<(f32, f32)> {
     assert!(stim_intervals.is_array());
     let stim: Vec<(f32, f32)> = stim_intervals.members().map(|p| {
         (p["step_t"].as_f32().unwrap(), p["step_v"].as_f32().unwrap())
@@ -147,7 +154,7 @@ impl ChannelParams {
     }
 }
 
-fn generate_emis_params(emis_params: &json::JsonValue) -> Vec<(f32, f32)> {
+fn gen_emis_params(emis_params: &json::JsonValue) -> Vec<(f32, f32)> {
     assert!(emis_params.is_array());
     let emis: Vec<(f32, f32)> = emis_params.members().map(|p| {
         (p["mu"].as_f32().unwrap(), p["sigma"].as_f32().unwrap())
@@ -166,19 +173,19 @@ pub struct EmisDist {
 
 impl EmisDist {
     fn from(emis_params: &json::JsonValue) -> Self {
-        let emis_params_vec: Vec<(f32, f32)> = generate_emis_params(emis_params);
+        let emis_params_vec: Vec<(f32, f32)> = gen_emis_params(emis_params);
         assert_eq!(emis_params_vec.len(), 5); // the number of different distributions we need
         EmisDist {
             closed_1_dist: Normal::new(emis_params_vec[0].0, emis_params_vec[0].1).unwrap(),
             closed_2_dist: Normal::new(emis_params_vec[1].0, emis_params_vec[1].1).unwrap(),
             closed_3_dist: Normal::new(emis_params_vec[2].0, emis_params_vec[2].1).unwrap(),
             closed_4_dist: Normal::new(emis_params_vec[3].0, emis_params_vec[3].1).unwrap(),
-            open_dist: Normal::new(emis_params_vec[4].0, emis_params_vec[4].1).unwrap()
+            open_dist:     Normal::new(emis_params_vec[4].0, emis_params_vec[4].1).unwrap()
         }
     }
 }
 
-fn generate_trans_matrix(c_p: &ChannelParams) -> [[f32; 5]; 5] {
+fn gen_trans_matrix(c_p: &ChannelParams) -> [[f32; 5]; 5] {
     [
         [1.0 - 4.0 * c_p.open_prob, 4.0 * c_p.open_prob, 0.0, 0.0, 0.0],
         [c_p.close_prob, 1.0 - c_p.close_prob - 3.0 * c_p.open_prob, 3.0 * c_p.open_prob, 0.0, 0.0],
@@ -213,10 +220,10 @@ impl HMMSim {
             total_time: total_time,
             dt: dt,
             channels: vec![Channel::new(); num_channels as usize],
-            stimulus: generate_stimulus(stim_intervals),
+            stimulus: gen_stimulus(stim_intervals),
             emis_dists: EmisDist::from(emis_params),
             cum_emis: vec![0.0; (total_time as f32 / dt) as usize],
-            trans_matrix: generate_trans_matrix(&c_p),
+            trans_matrix: gen_trans_matrix(&c_p),
             c_p: c_p,
         }
     }
@@ -233,7 +240,7 @@ impl HMMSim {
     }
 
     fn update_trans_matrix(&mut self) {
-        self.trans_matrix = generate_trans_matrix(&self.c_p);
+        self.trans_matrix = gen_trans_matrix(&self.c_p);
     }
 
     fn run(&mut self) {
@@ -282,7 +289,7 @@ impl HHKSim {
             dt: dt,
             k_g_max: k_g_max,
             k_probs: k_probs_init,
-            stimulus: generate_stimulus(stim_intervals),
+            stimulus: gen_stimulus(stim_intervals),
             emis_hist: vec![0.0; (total_time as f32 / dt) as usize],
             c_p: c_p,
         }
@@ -319,6 +326,166 @@ impl HHKSim {
         }
     }
 
+}
+
+/* ====================================================================================
+ * |                                                                                  |
+ * |                             Sodium Channel Modeling                              |
+ * |                                                                                  |
+ * ====================================================================================
+ */
+
+/*
+ * Here's the basic state diagram that we're assuming our Markov Model follows:
+ *
+ *                                            k1
+ *                      ------------------------------------------------
+ *                     /                                ah              \/
+ *  close            close            close            open             inact
+ * +-----+          +-----+          +-----+          +-----+          +-----+
+ * |     |    3am   |     |    2am   |     |    am    |     |    k3    |     |
+ * |  1  |  <---->  |  2  |  <---->  |  3  |  <---->  |  4  |   ---->  |  5  |
+ * |     |    1bm   |     |    2bm   |     |    3bm   |     |          |     |
+ * +-----+          +-----+          +-----+          +-----+          +-----+
+ *                                     /\               k2             -/
+ *                                       -------------------------------
+ *                                                      ah
+ *
+ * where here am == activation rate and bm == deactivation rate,
+ *            k_1 == inactivation rate 1, k_2 == inactivation rate 2,
+ *            k_3 inactivation rate 3, ah == deinactivation rate
+ *
+ */
+
+#[derive(Debug, PartialEq, PartialOrd, Copy, Clone)]
+#[repr(i32)]
+pub enum NaChannelState {
+    Closed1 = 0,
+    Closed2,
+    Closed3,
+    Open,
+    Inactive,
+}
+
+impl Distribution<NaChannelState> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> NaChannelState {
+        unsafe { ::std::mem::transmute(rng.gen_range(0..=4)) }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct NaChannel {
+    pub state: NaChannelState,
+    pub emis: f32,
+    pub state_hist: Vec<u32>,
+    pub emis_hist: Vec<f32>
+}
+
+impl NaChannel {
+    fn new() -> Self {
+        NaChannel {
+            state: rand::random(),
+            emis: 0.0f32,
+            state_hist: vec![], // look, I'm not going to say this is the fastest solution...
+            emis_hist: vec![],
+        }
+    }
+
+    fn make_transition(&mut self, trans_matrix: &[[f32; 5]; 5]) {
+        let transition_row = trans_matrix[self.state as usize];
+        let dist = WeightedIndex::new(&transition_row).unwrap();
+        let transition_prob = transition_row[dist.sample(&mut rand::thread_rng())];
+        self.state = unsafe { ::std::mem::transmute(transition_row.iter()
+                                                                  .position(|&r| r == transition_prob)
+                                                                  .unwrap() as i32)
+        };
+        self.state_hist.push(self.state as u32);
+    }
+
+    fn sample_emission(&mut self, emis_dist: &NaEmisDist) {
+        match self.state {
+            NaChannelState::Closed1 => {
+                self.emis = emis_dist.closed_1_dist.sample(&mut rand::thread_rng());
+            },
+            NaChannelState::Closed2 => {
+                self.emis = emis_dist.closed_2_dist.sample(&mut rand::thread_rng());
+            },
+            NaChannelState::Closed3 => {
+                self.emis = emis_dist.closed_3_dist.sample(&mut rand::thread_rng());
+            },
+            NaChannelState::Open => {
+                self.emis = emis_dist.open_dist.sample(&mut rand::thread_rng());
+            },
+            NaChannelState::Inactive => {
+                self.emis = emis_dist.inactive_dist.sample(&mut rand::thread_rng());
+            },
+        }
+        self.emis_hist.push(self.emis);
+    }
+}
+
+// TODO: update with Na params
+#[derive(Debug)]
+pub struct NaChannelParams {
+    pub e_rev: f32,
+    pub init_open_prob: f32,
+    pub init_close_prob: f32,
+    pub open_prob: f32,
+    pub open_exp_const: f32,
+    pub close_prob: f32,
+    pub close_exp_const: f32,
+}
+
+impl NaChannelParams {
+    fn from(e_rev: f32,
+            init_open_prob: f32,
+            open_exp_const: f32,
+            init_close_prob: f32,
+            close_exp_const: f32) -> Self {
+       NaChannelParams {
+        e_rev: e_rev,
+        init_open_prob: init_open_prob,
+        init_close_prob: init_close_prob,
+        open_prob: init_open_prob,
+        open_exp_const: open_exp_const,
+        close_prob: init_close_prob,
+        close_exp_const: close_exp_const
+       }
+    }
+}
+
+#[derive(Debug)]
+pub struct NaEmisDist {
+    pub closed_1_dist: Normal<f32>,
+    pub closed_2_dist: Normal<f32>,
+    pub closed_3_dist: Normal<f32>,
+    pub open_dist: Normal<f32>,
+    pub inactive_dist: Normal<f32>,
+}
+
+impl NaEmisDist {
+    fn from(emis_params: &json::JsonValue) -> Self {
+        let emis_params_vec: Vec<(f32, f32)> = gen_emis_params(emis_params);
+        assert_eq!(emis_params_vec.len(), 5); // the number of different distributions we need
+        NaEmisDist {
+            closed_1_dist: Normal::new(emis_params_vec[0].0, emis_params_vec[0].1).unwrap(),
+            closed_2_dist: Normal::new(emis_params_vec[1].0, emis_params_vec[1].1).unwrap(),
+            closed_3_dist: Normal::new(emis_params_vec[2].0, emis_params_vec[2].1).unwrap(),
+            open_dist:     Normal::new(emis_params_vec[3].0, emis_params_vec[3].1).unwrap(),
+            inactive_dist: Normal::new(emis_params_vec[4].0, emis_params_vec[4].1).unwrap(),
+        }
+    }
+}
+
+// TODO: update to reflect above Na scheme
+fn gen_na_trans_matrix(c_p: &NaChannelParams) -> [[f32; 5]; 5] {
+    [
+        [1.0 - 4.0 * c_p.open_prob, 4.0 * c_p.open_prob, 0.0, 0.0, 0.0],
+        [c_p.close_prob, 1.0 - c_p.close_prob - 3.0 * c_p.open_prob, 3.0 * c_p.open_prob, 0.0, 0.0],
+        [0.0, 2.0 * c_p.close_prob, 1.0 - 2.0 * (c_p.close_prob + c_p.open_prob), 2.0 * c_p.open_prob, 0.0],
+        [0.0, 0.0, 3.0 * c_p.close_prob, 1.0 - 3.0 * c_p.close_prob - c_p.open_prob, c_p.open_prob],
+        [0.0, 0.0, 0.0, 4.0 * c_p.close_prob, 1.0 - 4.0 * c_p.close_prob],
+    ]
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
