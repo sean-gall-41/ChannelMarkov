@@ -243,15 +243,12 @@ impl HMMSim {
                 self.update_probs(self.stimulus[stim_id].1);
                 self.update_trans_matrix();
                 stim_id += 1;
-                // reset for use below, in-case past valid bounds
-                if stim_id == self.stimulus.len() { stim_id -= 1; }
             }
             let mut cum_emis_ts: f32 = 0.0;
             for channel in &mut self.channels {
                 channel.make_transition(&self.trans_matrix);
                 channel.sample_emission(&self.emis_dists);
-                // TODO: un-hardcode params
-                cum_emis_ts -= channel.emis * (self.stimulus[stim_id].1 - self.c_p.e_rev);
+                cum_emis_ts += channel.emis * (self.stimulus[stim_id-1].1 - self.c_p.e_rev);
             }
             self.cum_emis[ts as usize] = cum_emis_ts;
         }
@@ -295,12 +292,11 @@ impl HHKSim {
     // the name remains as a prob (my bad, needs refactor) but they are
     // to be understood as rates
     fn update_rates(&mut self, voltage: f32) {
-        // for now: hard-coding in values for delayed K+ rectifier conductance
         self.c_p.open_prob =
-            DEFAULT_OPEN_RATE *
+            self.c_p.init_open_prob *
             (self.c_p.open_exp_const * voltage).exp();
         self.c_p.close_prob =
-            DEFAULT_CLOSE_RATE *
+            self.c_p.init_close_prob *
             (self.c_p.close_exp_const * voltage).exp();
     }
 
@@ -312,9 +308,10 @@ impl HHKSim {
                 stim_id += 1;
             }
             let ts: usize = ts as usize;
+            // no need to use time step, considered in probs update
             self.k_probs[ts] = self.k_probs[ts-1]
-                        + ((1.0 - self.k_probs[ts-1]) * self.c_p.open_prob
-                        - self.k_probs[ts-1] * self.c_p.close_prob) * self.dt;
+                        + (1.0 - self.k_probs[ts-1]) * self.c_p.open_prob
+                        - self.k_probs[ts-1] * self.c_p.close_prob;
 
             self.emis_hist[ts] = self.k_g_max
                                * self.k_probs[ts].powf(4.0)
@@ -372,7 +369,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .set_label_area_size(LabelAreaPosition::Left, 45)
         .set_label_area_size(LabelAreaPosition::Bottom, 40)
         .build_cartesian_2d(-50f32..((model_hmm_sim.total_time as f32) / model_hmm_sim.dt + 50f32),
-                                                (-2.5 * model_hmm_sim.num_channels as f32)..(8.5 * model_hmm_sim.num_channels as f32))?;
+                                                (-15.0 * model_hmm_sim.num_channels as f32)..(40.0 * model_hmm_sim.num_channels as f32))?;
 
     chart
         .configure_mesh()
@@ -389,12 +386,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }),
         &BLUE,
     ))?;
-    let max = model_hhk_sim.emis_hist.iter().fold(std::f32::NEG_INFINITY, |a, &b| a.max(b));
     chart.draw_series(LineSeries::new(
         model_hhk_sim.emis_hist.iter().enumerate().map(|(ts, e)| {
-            (ts as f32, max * *e)
+            (ts as f32, model_hmm_sim.num_channels as f32 * *e)
         }),
-        &full_palette::ORANGE,
+        &BLACK,
     ))?;
 
     // uncomment for individual channel emission time series
