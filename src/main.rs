@@ -14,7 +14,7 @@ const PARAM_FILE_NAME: &'static str = "params.json";
 //const OUT_IMG_FILE_NAME: &'static str = "example_cum_emis_trace.png";
 const OUT_IMG_FILE_NAME: &'static str = "example_hhk_emis_trace.png";
 
-/* ====================================================================================
+/* =======================_=============================================================
  * |                                                                                  |
  * |                           Potassium Channel Modeling                             |
  * |                                                                                  |
@@ -427,29 +427,66 @@ impl NaChannel {
 // TODO: update with Na params
 #[derive(Debug)]
 pub struct NaChannelParams {
+    pub k_1: f32,
+    pub k_2: f32,
+    pub k_3: f32,
+    pub m_open_prob: f32,
+    pub init_m_open_prob: f32,
+    pub m_pre_v_fact_open: f32,
+    pub m_v_offset_open: f32,
+    pub m_close_prob: f32,
+    pub init_m_close_prob: f32,
+    pub close_m_exp_const: f32,
+    pub m_v_offset_close: f32,
+    pub h_open_prob: f32,
+    pub init_h_open_prob: f32,
+    pub h_v_offset_open: f32,
+    pub open_h_exp_const: f32,
+    pub h_close_prob: f32,
+    pub init_h_close_prob: f32,
+    pub h_pre_v_fact_close: f32,
+    pub h_v_offset_close: f32,
     pub e_rev: f32,
-    pub init_open_prob: f32,
-    pub init_close_prob: f32,
-    pub open_prob: f32,
-    pub open_exp_const: f32,
-    pub close_prob: f32,
-    pub close_exp_const: f32,
 }
 
 impl NaChannelParams {
-    fn from(e_rev: f32,
-            init_open_prob: f32,
-            open_exp_const: f32,
-            init_close_prob: f32,
-            close_exp_const: f32) -> Self {
+    fn from(k_1: f32,
+            k_2: f32,
+            k_3: f32,
+            init_m_open_prob: f32,
+            m_pre_v_fact_open: f32,
+            m_v_offset_open: f32,
+            init_m_close_prob: f32,
+            close_m_exp_const: f32,
+            m_v_offset_close: f32,
+            init_h_open_prob: f32,
+            h_v_offset_open: f32,
+            open_h_exp_const: f32,
+            init_h_close_prob: f32,
+            h_pre_v_fact_close: f32,
+            h_v_offset_close: f32,
+            e_rev: f32) -> Self {
        NaChannelParams {
-        e_rev: e_rev,
-        init_open_prob: init_open_prob,
-        init_close_prob: init_close_prob,
-        open_prob: init_open_prob,
-        open_exp_const: open_exp_const,
-        close_prob: init_close_prob,
-        close_exp_const: close_exp_const
+            k_1: k_1,
+            k_2: k_2,
+            k_3: k_3,
+            m_open_prob: init_m_open_prob,
+            init_m_open_prob: init_m_open_prob,
+            m_pre_v_fact_open: m_pre_v_fact_open,
+            m_v_offset_open: m_v_offset_open,
+            m_close_prob: init_m_close_prob,
+            init_m_close_prob: init_m_close_prob,
+            close_m_exp_const: close_m_exp_const,
+            m_v_offset_close: m_v_offset_close,
+            h_open_prob: init_h_open_prob,
+            init_h_open_prob: init_h_open_prob,
+            h_v_offset_open: h_v_offset_open,
+            open_h_exp_const: open_h_exp_const,
+            h_close_prob: init_h_close_prob,
+            init_h_close_prob: init_h_close_prob,
+            h_pre_v_fact_close: h_pre_v_fact_close,
+            h_v_offset_close: h_v_offset_close,
+            e_rev: e_rev
        }
     }
 }
@@ -477,15 +514,80 @@ impl NaEmisDist {
     }
 }
 
-// TODO: update to reflect above Na scheme
 fn gen_na_trans_matrix(c_p: &NaChannelParams) -> [[f32; 5]; 5] {
     [
-        [1.0 - 4.0 * c_p.open_prob, 4.0 * c_p.open_prob, 0.0, 0.0, 0.0],
-        [c_p.close_prob, 1.0 - c_p.close_prob - 3.0 * c_p.open_prob, 3.0 * c_p.open_prob, 0.0, 0.0],
-        [0.0, 2.0 * c_p.close_prob, 1.0 - 2.0 * (c_p.close_prob + c_p.open_prob), 2.0 * c_p.open_prob, 0.0],
-        [0.0, 0.0, 3.0 * c_p.close_prob, 1.0 - 3.0 * c_p.close_prob - c_p.open_prob, c_p.open_prob],
-        [0.0, 0.0, 0.0, 4.0 * c_p.close_prob, 1.0 - 4.0 * c_p.close_prob],
+        [1.0 - 3.0 * c_p.m_open_prob, 3.0 * c_p.m_open_prob, 0.0, 0.0, 0.0],
+        [c_p.m_close_prob, 1.0 - c_p.m_close_prob - 2.0 * c_p.m_open_prob - c_p.k_1, 2.0 * c_p.m_open_prob, 0.0, c_p.k_1],
+        [0.0, 2.0 * c_p.m_close_prob, 1.0 - 2.0 * c_p.m_close_prob - c_p.m_open_prob - c_p.k_2, c_p.m_open_prob, c_p.k_2],
+        [0.0, 0.0, 3.0 * c_p.m_close_prob, 1.0 - 3.0 * c_p.m_close_prob - c_p.k_3, c_p.k_3],
+        [0.0, 0.0, c_p.h_open_prob, 0.0, 1.0 - c_p.h_open_prob],
     ]
+}
+
+#[derive(Debug)]
+pub struct HMMNaSim {
+    pub num_channels: u32,
+    pub total_time: u32,
+    pub dt: f32,
+    pub channels: Vec<NaChannel>,
+    pub stimulus: Vec<(f32, f32)>,
+    pub emis_dists: NaEmisDist,
+    pub cum_emis: Vec<f32>,
+    pub trans_matrix: [[f32; 5]; 5],
+    pub c_p: NaChannelParams,
+}
+
+impl HMMNaSim {
+    fn from(num_channels: u32,
+            total_time: u32,
+            dt: f32,
+            c_p: NaChannelParams,
+            stim_intervals: &json::JsonValue,
+            emis_params: &json::JsonValue) -> Self {
+        HMMNaSim {
+            num_channels: num_channels,
+            total_time: total_time,
+            dt: dt,
+            channels: vec![NaChannel::new(); num_channels as usize],
+            stimulus: gen_stimulus(stim_intervals),
+            emis_dists: NaEmisDist::from(emis_params),
+            cum_emis: vec![0.0; (total_time as f32 / dt) as usize],
+            trans_matrix: gen_na_trans_matrix(&c_p),
+            c_p: c_p,
+        }
+    }
+
+    fn update_probs(&mut self, voltage: f32) {
+        // NOTE: since multiplying by init probs, already taken extra mult factor of dt
+        // into acct
+        self.c_p.m_open_prob = (self.c_p.m_pre_v_fact_open * (voltage - self.c_p.m_v_offset_open))
+                             / (1.0 - (-self.c_p.m_pre_v_fact_open * (voltage - self.c_p.m_v_offset_open)).exp());
+        self.c_p.m_close_prob = self.c_p.init_m_close_prob * (self.c_p.close_m_exp_const * (voltage - self.c_p.m_v_offset_close)).exp();
+        self.c_p.h_open_prob = self.c_p.init_h_open_prob * (self.c_p.open_h_exp_const * (voltage - self.c_p.h_v_offset_open)).exp();
+        self.c_p.h_close_prob = 1.0 / (1.0 + (self.c_p.h_pre_v_fact_close * (voltage - self.c_p.h_v_offset_close)).exp());
+    }
+
+    fn update_trans_matrix(&mut self) {
+        self.trans_matrix = gen_na_trans_matrix(&self.c_p);
+    }
+
+    fn run(&mut self) {
+        let mut stim_id: usize = 0;
+        for ts in 0..((self.total_time as f32 / self.dt) as u32) {
+            if stim_id < self.stimulus.len() && ts == (self.stimulus[stim_id].0 / self.dt) as u32 {
+                self.update_probs(self.stimulus[stim_id].1);
+                self.update_trans_matrix();
+                stim_id += 1;
+            }
+            let mut cum_emis_ts: f32 = 0.0;
+            for channel in &mut self.channels {
+                channel.make_transition(&self.trans_matrix);
+                channel.sample_emission(&self.emis_dists);
+                cum_emis_ts += channel.emis * (self.stimulus[stim_id-1].1 - self.c_p.e_rev);
+            }
+            self.cum_emis[ts as usize] = cum_emis_ts;
+        }
+    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
