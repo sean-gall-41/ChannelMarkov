@@ -12,7 +12,7 @@ use plotters::prelude::*;
 const PARAM_FILE_NAME: &'static str = "params.json";
 //const OUT_IMG_FILE_NAME: &'static str = "example_trace.png";
 //const OUT_IMG_FILE_NAME: &'static str = "example_cum_emis_trace.png";
-const OUT_IMG_FILE_NAME: &'static str = "example_hhk_emis_trace.png";
+const OUT_IMG_FILE_NAME: &'static str = "example_nahmm_emis_trace.png";
 
 /* =======================_=============================================================
  * |                                                                                  |
@@ -560,11 +560,11 @@ impl HMMNaSim {
     fn update_probs(&mut self, voltage: f32) {
         // NOTE: since multiplying by init probs, already taken extra mult factor of dt
         // into acct
-        self.c_p.m_open_prob = (self.c_p.m_pre_v_fact_open * (voltage - self.c_p.m_v_offset_open))
+        self.c_p.m_open_prob = (self.c_p.init_m_open_prob * (voltage - self.c_p.m_v_offset_open))
                              / (1.0 - (-self.c_p.m_pre_v_fact_open * (voltage - self.c_p.m_v_offset_open)).exp());
         self.c_p.m_close_prob = self.c_p.init_m_close_prob * (self.c_p.close_m_exp_const * (voltage - self.c_p.m_v_offset_close)).exp();
         self.c_p.h_open_prob = self.c_p.init_h_open_prob * (self.c_p.open_h_exp_const * (voltage - self.c_p.h_v_offset_open)).exp();
-        self.c_p.h_close_prob = 1.0 / (1.0 + (self.c_p.h_pre_v_fact_close * (voltage - self.c_p.h_v_offset_close)).exp());
+        self.c_p.h_close_prob = self.c_p.init_h_close_prob / (1.0 + (self.c_p.h_pre_v_fact_close * (voltage - self.c_p.h_v_offset_close)).exp());
     }
 
     fn update_trans_matrix(&mut self) {
@@ -577,6 +577,7 @@ impl HMMNaSim {
             if stim_id < self.stimulus.len() && ts == (self.stimulus[stim_id].0 / self.dt) as u32 {
                 self.update_probs(self.stimulus[stim_id].1);
                 self.update_trans_matrix();
+                //if ts == 0 { println!("{:#?}", self.trans_matrix); }
                 stim_id += 1;
             }
             let mut cum_emis_ts: f32 = 0.0;
@@ -632,9 +633,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                            na_model_params["total_time"].as_u32().unwrap(),
                                            na_model_params["dt"].as_f32().unwrap(),
                                            NaChannelParams::from(
-                                              na_model_params["k_1"].as_f32().unwrap(),
-                                              na_model_params["k_2"].as_f32().unwrap(),
-                                              na_model_params["k_3"].as_f32().unwrap(),
+                                              na_model_params["k_1"].as_f32().unwrap()
+                                              * na_model_params["dt"].as_f32().unwrap(),
+                                              na_model_params["k_2"].as_f32().unwrap()
+                                              * na_model_params["dt"].as_f32().unwrap(),
+                                              na_model_params["k_3"].as_f32().unwrap()
+                                              * na_model_params["dt"].as_f32().unwrap(),
                                               na_model_params["m_pre_v_fact_open"].as_f32().unwrap()
                                               * na_model_params["dt"].as_f32().unwrap(),
                                               na_model_params["m_pre_v_fact_open"].as_f32().unwrap(),
@@ -647,14 +651,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                               * na_model_params["dt"].as_f32().unwrap(),
                                               na_model_params["h_v_offset_open"].as_f32().unwrap(),
                                               na_model_params["open_h_exp_const"].as_f32().unwrap(),
-                                              na_model_params["h_pre_v_fact_close"].as_f32().unwrap(),
+                                              1.0 * na_model_params["dt"].as_f32().unwrap(),
                                               na_model_params["h_pre_v_fact_close"].as_f32().unwrap(),
                                               na_model_params["h_v_offset_close"].as_f32().unwrap(),
                                               na_model_params["e_reverse"].as_f32().unwrap()
                                            ),
                                            &na_model_params["stimulus"],
                                            &na_model_params["emissions"]);
-
+    println!("{:#?}", model_nahmm_sim.c_p);
+    model_nahmm_sim.run();
     // it's plotting time
     let root = BitMapBackend::new(OUT_IMG_FILE_NAME, (1024, 600)).into_drawing_area();
     root.fill(&WHITE)?;
@@ -666,7 +671,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .set_label_area_size(LabelAreaPosition::Left, 45)
         .set_label_area_size(LabelAreaPosition::Bottom, 40)
         .build_cartesian_2d(-50f32..((model_nahmm_sim.total_time as f32) / model_nahmm_sim.dt + 50f32),
-                                                (-15.0 * model_nahmm_sim.num_channels as f32)..(40.0 * model_nahmm_sim.num_channels as f32))?;
+                                                (-30.0 * model_nahmm_sim.num_channels as f32)..(15.0 * model_nahmm_sim.num_channels as f32))?;
 
     chart
         .configure_mesh()

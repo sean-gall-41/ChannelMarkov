@@ -49,7 +49,7 @@
   },
   "sodium" :
   {
-    "k_comment" : "k's represent voltage indep rates relating to inactivation"
+    "k_comment" : "k's represent voltage indep rates relating to inactivation",
     "k_1" : 0.24,
     "k_2" : 0.4,
     "k_3" : 1.5,
@@ -64,8 +64,8 @@
     "h_pre_v_fact_close" : -0.1,
     "h_v_offset_close" : -35,
     "e_reverse" : 50,
-    "num_channels" : 100,
-    "total_time" : 200,
+    "num_channels" : 1000,
+    "total_time" : 10,
     "dt" : 0.001,
     "stimulus" : [
       {
@@ -73,12 +73,8 @@
         "step_v" : -100.0
       },
       {
-        "step_t" : 50,
+        "step_t" : 1,
         "step_v" : 10.0
-      },
-      {
-        "step_t" : 150,
-        "step_v" : -100.0
       }
     ],
     "emissions_comment" : "emissions now in units of conductance (mS)",
@@ -96,11 +92,11 @@
         "sigma" : 0.0
       },
       {
-        "mu" : 0.0,
+        "mu" : 1.2,
         "sigma" : 0.0
       },
       {
-        "mu" : 1.2,
+        "mu" : 0.0,
         "sigma" : 0.0
       }
     ]
