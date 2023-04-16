@@ -1,11 +1,13 @@
 pub mod k_hmm;
 pub mod k_hh;
 pub mod na_hmm;
+pub mod na_hh;
 pub mod util;
 
 use k_hmm::{KHMMSim, KChannelParams};
 use k_hh::KHHSim;
 use na_hmm::{NaHMMSim, NaChannelParams};
+use na_hh::NaHHSim;
 use std::fs;
 use std::io::Error;
 use plotters::prelude::*;
@@ -13,7 +15,7 @@ use plotters::prelude::*;
 const PARAM_FILE_NAME: &'static str = "params.json";
 //const OUT_IMG_FILE_NAME: &'static str = "example_trace.png";
 //const OUT_IMG_FILE_NAME: &'static str = "example_cum_emis_trace.png";
-const OUT_IMG_FILE_NAME: &'static str = "example_nahmm_emis_trace.png";
+const OUT_IMG_FILE_NAME: &'static str = "example_nahh_emis_trace.png";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // initial values for delayed K+ rectifier conductance
@@ -83,6 +85,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                            &na_model_params["stimulus"],
                                            &na_model_params["emissions"]);
     model_nahmm_sim.run();
+
+    let mut model_nahh_sim = NaHHSim::from(na_model_params["total_time"].as_u32().unwrap(),
+                                           na_model_params["dt"].as_f32().unwrap(),
+                                           na_model_params["emissions"][3]["mu"].as_f32().unwrap(),
+                                           NaChannelParams::from(
+                                               na_model_params["k_1"].as_f32().unwrap()
+                                               * na_model_params["dt"].as_f32().unwrap(),
+                                               na_model_params["k_2"].as_f32().unwrap()
+                                               * na_model_params["dt"].as_f32().unwrap(),
+                                               na_model_params["k_3"].as_f32().unwrap()
+                                               * na_model_params["dt"].as_f32().unwrap(),
+                                               na_model_params["m_pre_v_fact_open"].as_f32().unwrap()
+                                               * na_model_params["dt"].as_f32().unwrap(),
+                                               na_model_params["m_pre_v_fact_open"].as_f32().unwrap(),
+                                               na_model_params["m_v_offset_open"].as_f32().unwrap(),
+                                               na_model_params["init_m_close_rate"].as_f32().unwrap()
+                                               * na_model_params["dt"].as_f32().unwrap(),
+                                               na_model_params["close_m_exp_const"].as_f32().unwrap(),
+                                               na_model_params["m_v_offset_close"].as_f32().unwrap(),
+                                               na_model_params["init_h_open_rate"].as_f32().unwrap()
+                                               * na_model_params["dt"].as_f32().unwrap(),
+                                               na_model_params["h_v_offset_open"].as_f32().unwrap(),
+                                               na_model_params["open_h_exp_const"].as_f32().unwrap(),
+                                               1.0 * na_model_params["dt"].as_f32().unwrap(),
+                                               na_model_params["h_pre_v_fact_close"].as_f32().unwrap(),
+                                               na_model_params["h_v_offset_close"].as_f32().unwrap(),
+                                               na_model_params["e_reverse"].as_f32().unwrap()
+                                           ),
+                                           &na_model_params["stimulus"]);
+
+    model_nahh_sim.run();
+
     // it's plotting time
     let root = BitMapBackend::new(OUT_IMG_FILE_NAME, (1024, 600)).into_drawing_area();
     root.fill(&WHITE)?;
@@ -111,12 +145,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }),
         &BLUE,
     ))?;
-    //chart.draw_series(LineSeries::new(
-    //    model_hhk_sim.emis_hist.iter().enumerate().map(|(ts, e)| {
-    //        (ts as f32, model_hmm_sim.num_channels as f32 * *e)
-    //    }),
-    //    &BLACK,
-    //))?;
+    chart.draw_series(LineSeries::new(
+        model_nahh_sim.emis_hist.iter().enumerate().map(|(ts, e)| {
+            (ts as f32, model_nahmm_sim.num_channels as f32 * *e)
+        }),
+        &BLACK,
+    ))?;
 
     // uncomment for individual channel emission time series
     //for channel in model_sim.channels {
