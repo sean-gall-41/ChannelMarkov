@@ -13,8 +13,6 @@ use std::io::Error;
 use plotters::prelude::*;
 
 const PARAM_FILE_NAME: &'static str = "params.json";
-//const OUT_IMG_FILE_NAME: &'static str = "example_trace.png";
-//const OUT_IMG_FILE_NAME: &'static str = "example_cum_emis_trace.png";
 const OUT_IMG_FILE_NAME: &'static str = "example_nahh_emis_trace.png";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -104,15 +102,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // it's plotting time
     let root = BitMapBackend::new(OUT_IMG_FILE_NAME, (1024, 600)).into_drawing_area();
     root.fill(&WHITE)?;
-    let root = root.titled(format!("HMM vs HH emissions num_channels={}", model_nahmm_sim.num_channels).as_str(),
-                           ("sans-serif", 40))?;
+    let root = root.titled(
+        format!("HMM vs HH emissions num_channels={}",
+                model_nahmm_sim.num_channels).as_str(),
+        ("sans-serif", 40)
+    )?;
 
     let mut chart = ChartBuilder::on(&root)
         .margin(10)
         .set_label_area_size(LabelAreaPosition::Left, 45)
         .set_label_area_size(LabelAreaPosition::Bottom, 40)
-        .build_cartesian_2d(-50f32..((model_nahmm_sim.total_time as f32) / model_nahmm_sim.dt + 50f32),
-                                                (-30.0 * model_nahmm_sim.num_channels as f32)..(15.0 * model_nahmm_sim.num_channels as f32))?;
+        .build_cartesian_2d(
+            -50f32..((model_nahmm_sim.total_time as f32) / model_nahmm_sim.dt + 50f32),
+            (-30.0 * model_nahmm_sim.num_channels as f32)..(15.0 * model_nahmm_sim.num_channels as f32))?;
 
     chart
         .configure_mesh()
@@ -135,22 +137,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }),
         &BLACK,
     ))?;
-
-    // uncomment for individual channel emission time series
-    //for channel in model_sim.channels {
-    //    chart.draw_series(LineSeries::new(
-    //        channel.state_hist.iter().enumerate().map(|(ts, s)| {
-    //            (ts as f32, 0.65f32 * (*s as f32) + 10f32)
-    //        }),
-    //        &full_palette::ORANGE,
-    //    ))?;
-    //    chart.draw_series(LineSeries::new(
-    //        channel.emis_hist.iter().enumerate().map(|(ts, e)| {
-    //            (ts as f32, *e)
-    //        }),
-    //        &BLUE,
-    //    ))?;
-    //}
 
     root.present().expect("Unable to write result to file.");
     println!("Result have been saved to {}", OUT_IMG_FILE_NAME);
