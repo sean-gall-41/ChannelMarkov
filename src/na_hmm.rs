@@ -104,7 +104,7 @@ impl NaChannel {
 }
 
 // TODO: update with Na params
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct NaChannelParams {
     pub k_1: f32,
     pub k_2: f32,

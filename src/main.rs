@@ -55,65 +55,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     //model_hhk_sim.run();
 
     let na_model_params = &params_json["sodium"];
-    let mut model_nahmm_sim = NaHMMSim::from(na_model_params["num_channels"].as_u32().unwrap(),
-                                           na_model_params["total_time"].as_u32().unwrap(),
-                                           na_model_params["dt"].as_f32().unwrap(),
-                                           NaChannelParams::from(
-                                              na_model_params["k_1"].as_f32().unwrap()
-                                              * na_model_params["dt"].as_f32().unwrap(),
-                                              na_model_params["k_2"].as_f32().unwrap()
-                                              * na_model_params["dt"].as_f32().unwrap(),
-                                              na_model_params["k_3"].as_f32().unwrap()
-                                              * na_model_params["dt"].as_f32().unwrap(),
-                                              na_model_params["m_pre_v_fact_open"].as_f32().unwrap()
-                                              * na_model_params["dt"].as_f32().unwrap(),
-                                              na_model_params["m_pre_v_fact_open"].as_f32().unwrap(),
-                                              na_model_params["m_v_offset_open"].as_f32().unwrap(),
-                                              na_model_params["init_m_close_rate"].as_f32().unwrap()
-                                              * na_model_params["dt"].as_f32().unwrap(),
-                                              na_model_params["close_m_exp_const"].as_f32().unwrap(),
-                                              na_model_params["m_v_offset_close"].as_f32().unwrap(),
-                                              na_model_params["init_h_open_rate"].as_f32().unwrap()
-                                              * na_model_params["dt"].as_f32().unwrap(),
-                                              na_model_params["h_v_offset_open"].as_f32().unwrap(),
-                                              na_model_params["open_h_exp_const"].as_f32().unwrap(),
-                                              1.0 * na_model_params["dt"].as_f32().unwrap(),
-                                              na_model_params["h_pre_v_fact_close"].as_f32().unwrap(),
-                                              na_model_params["h_v_offset_close"].as_f32().unwrap(),
-                                              na_model_params["e_reverse"].as_f32().unwrap()
-                                           ),
-                                           &na_model_params["stimulus"],
-                                           &na_model_params["emissions"]);
+    let na_channel_params = NaChannelParams::from(
+        na_model_params["k_1"].as_f32().unwrap()
+        * na_model_params["dt"].as_f32().unwrap(),
+        na_model_params["k_2"].as_f32().unwrap()
+        * na_model_params["dt"].as_f32().unwrap(),
+        na_model_params["k_3"].as_f32().unwrap()
+        * na_model_params["dt"].as_f32().unwrap(),
+        na_model_params["m_pre_v_fact_open"].as_f32().unwrap()
+        * na_model_params["dt"].as_f32().unwrap(),
+        na_model_params["m_pre_v_fact_open"].as_f32().unwrap(),
+        na_model_params["m_v_offset_open"].as_f32().unwrap(),
+        na_model_params["init_m_close_rate"].as_f32().unwrap()
+        * na_model_params["dt"].as_f32().unwrap(),
+        na_model_params["close_m_exp_const"].as_f32().unwrap(),
+        na_model_params["m_v_offset_close"].as_f32().unwrap(),
+        na_model_params["init_h_open_rate"].as_f32().unwrap()
+        * na_model_params["dt"].as_f32().unwrap(),
+        na_model_params["h_v_offset_open"].as_f32().unwrap(),
+        na_model_params["open_h_exp_const"].as_f32().unwrap(),
+        1.0 * na_model_params["dt"].as_f32().unwrap(),
+        na_model_params["h_pre_v_fact_close"].as_f32().unwrap(),
+        na_model_params["h_v_offset_close"].as_f32().unwrap(),
+        na_model_params["e_reverse"].as_f32().unwrap()
+    );
+
+    let mut model_nahmm_sim = NaHMMSim::from(
+        na_model_params["num_channels"].as_u32().unwrap(),
+        na_model_params["total_time"].as_u32().unwrap(),
+        na_model_params["dt"].as_f32().unwrap(),
+        na_channel_params.clone(),
+        &na_model_params["stimulus"],
+        &na_model_params["emissions"]
+    );
+
     model_nahmm_sim.run();
 
-    let mut model_nahh_sim = NaHHSim::from(na_model_params["total_time"].as_u32().unwrap(),
-                                           na_model_params["dt"].as_f32().unwrap(),
-                                           na_model_params["emissions"][3]["mu"].as_f32().unwrap(),
-                                           NaChannelParams::from(
-                                               na_model_params["k_1"].as_f32().unwrap()
-                                               * na_model_params["dt"].as_f32().unwrap(),
-                                               na_model_params["k_2"].as_f32().unwrap()
-                                               * na_model_params["dt"].as_f32().unwrap(),
-                                               na_model_params["k_3"].as_f32().unwrap()
-                                               * na_model_params["dt"].as_f32().unwrap(),
-                                               na_model_params["m_pre_v_fact_open"].as_f32().unwrap()
-                                               * na_model_params["dt"].as_f32().unwrap(),
-                                               na_model_params["m_pre_v_fact_open"].as_f32().unwrap(),
-                                               na_model_params["m_v_offset_open"].as_f32().unwrap(),
-                                               na_model_params["init_m_close_rate"].as_f32().unwrap()
-                                               * na_model_params["dt"].as_f32().unwrap(),
-                                               na_model_params["close_m_exp_const"].as_f32().unwrap(),
-                                               na_model_params["m_v_offset_close"].as_f32().unwrap(),
-                                               na_model_params["init_h_open_rate"].as_f32().unwrap()
-                                               * na_model_params["dt"].as_f32().unwrap(),
-                                               na_model_params["h_v_offset_open"].as_f32().unwrap(),
-                                               na_model_params["open_h_exp_const"].as_f32().unwrap(),
-                                               1.0 * na_model_params["dt"].as_f32().unwrap(),
-                                               na_model_params["h_pre_v_fact_close"].as_f32().unwrap(),
-                                               na_model_params["h_v_offset_close"].as_f32().unwrap(),
-                                               na_model_params["e_reverse"].as_f32().unwrap()
-                                           ),
-                                           &na_model_params["stimulus"]);
+    let mut model_nahh_sim = NaHHSim::from(
+        na_model_params["total_time"].as_u32().unwrap(),
+        na_model_params["dt"].as_f32().unwrap(),
+        na_model_params["emissions"][3]["mu"].as_f32().unwrap(),
+        na_channel_params.clone(),
+        &na_model_params["stimulus"]
+    );
 
     model_nahh_sim.run();
 
