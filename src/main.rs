@@ -100,7 +100,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     model_nahh_sim.run();
 
     // it's plotting time
-    let root = BitMapBackend::new(OUT_IMG_FILE_NAME, (1024, 600)).into_drawing_area();
+    let root = BitMapBackend::new(OUT_IMG_FILE_NAME, (1024, 800)).into_drawing_area();
     root.fill(&WHITE)?;
     let root = root.titled(
         format!("HMM vs HH emissions num_channels={}",
@@ -131,9 +131,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }),
         &BLUE,
     ))?;
+
+    // this is the best value I could find for scaling (with 100 channels) but
+    // there is a lot of variation around this point from simulation to simulation
     chart.draw_series(LineSeries::new(
         model_nahh_sim.emis_hist.iter().enumerate().map(|(ts, e)| {
-            (ts as f32, model_nahmm_sim.num_channels as f32 * *e)
+            (ts as f32, (model_nahmm_sim.num_channels as f32 + 23.0) * *e)
         }),
         &BLACK,
     ))?;
